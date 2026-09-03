@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>지원 현황 트래커</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<div id="authScreen" class="auth-screen">
+  <div class="auth-brand">
+    <div class="auth-brand-inner">
+      <div class="auth-logo">📋 지원 현황 트래커</div>
+      <h1>여러 곳에 넣은 지원서,<br>한 곳에서 정리하세요</h1>
+      <ul class="auth-feature-list">
+        <li>총 몇 곳에 지원했는지 한눈에 확인</li>
+        <li>동일 기업 중복 지원 자동 감지</li>
+        <li>전형 단계별 합격률 시각화</li>
+        <li>서류·면접·과제 결과 날짜까지 기록</li>
+      </ul>
+    </div>
+  </div>
+  <div class="auth-panel">
+    <div class="auth-card">
+      <p class="auth-note">※ 이 비밀번호는 실제 보안 인증이 아니라, 같은 브라우저 안에서 기록을 구분하는 용도로만 사용됩니다. 브라우저 데이터를 지우면 함께 사라지니 꼭 "내보내기"로 백업해두세요.</p>
+
+      <div class="auth-tabs">
+        <button type="button" class="auth-tab active" data-tab="new">새로 시작하기</button>
+        <button type="button" class="auth-tab" data-tab="load">내 기록 불러오기</button>
+      </div>
+
+      <form id="newAccountForm" class="auth-form">
+        <label>비밀번호</label>
+        <input type="password" id="newPw" required minlength="4">
+        <label>비밀번호 확인</label>
+        <input type="password" id="newPw2" required minlength="4">
+        <p class="auth-error" id="newAccountError" hidden></p>
+        <button type="submit" class="btn-primary">시작하기</button>
+      </form>
+
+      <form id="loadAccountForm" class="auth-form" hidden>
+        <label>비밀번호</label>
+        <input type="password" id="loadPw" required>
+        <p class="auth-error" id="loadAccountError" hidden></p>
+        <button type="submit" class="btn-primary">불러오기</button>
+      </form>
+    </div>
+  </div>
+</div>
+
+<div id="appShell" class="app-shell" hidden>
+  <header class="topbar">
+    <div class="topbar-left"><span class="logo">📋 지원 현황 트래커</span></div>
+    <div class="topbar-right">
+      <button type="button" id="switchAccountBtn" class="btn-ghost">내 기록 불러오기</button>
+      <button type="button" id="openAddDrawerBtn" class="btn-primary">+ 기록 추가</button>
+      <div class="account-menu">
+        <button type="button" id="accountMenuBtn" class="btn-icon">👤</button>
+        <div id="accountDropdown" class="dropdown" hidden>
+          <button type="button" id="lockBtn">잠금 (로그아웃)</button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <div class="layout">
+    <nav class="sidebar">
+      <button type="button" class="nav-item active" data-view="list">지원 내역</button>
+      <button type="button" class="nav-item" data-view="stats">통계</button>
+      <button type="button" class="nav-item" data-view="calendar">캘린더</button>
+      <button type="button" class="nav-item" data-view="notes">메모</button>
+      <button type="button" class="nav-item" data-view="settings">설정</button>
+      <button type="button" class="nav-item" data-view="help">도움말</button>
+    </nav>
+
+    <main class="content">
+
+      <section id="view-list" class="view">
+        <h2 class="view-title">지원 내역</h2>
+
+        <div class="kpi-grid" id="kpiGrid"></div>
+        <div class="rate-grid" id="rateGrid"></div>
+
+        <div class="filter-bar">
+          <input type="text" id="searchInput" placeholder="기업명 검색">
+          <select id="statusFilter">
+            <option value="all">상태: 전체</option>
+            <option value="진행중">진행 중</option>
+            <option value="최종합격">최종 합격</option>
+            <option value="불합격">불합격</option>
+            <option value="지원철회">지원철회</option>
+          </select>
+          <select id="stageFilter"><option value="all">현재 단계: 전체</option></select>
+          <select id="positionFilter"><option value="all">포지션: 전체</option></select>
+          <button type="button" id="resetFilterBtn" class="btn-ghost">필터 초기화</button>
+        </div>
+
+        <table class="app-table">
+          <thead>
+            <tr>
+              <th>기업명</th><th>지원 포지션</th><th>지원일</th><th>현재 단계</th><th>상태</th><th>최근 일정</th><th>메모</th>
+            </tr>
+          </thead>
+          <tbody id="appTableBody"></tbody>
+        </table>
+        <p id="emptyMsg" class="empty-msg" hidden></p>
+      </section>
+
+      <section id="view-detail" class="view" hidden>
+        <button type="button" id="backToListBtn" class="btn-ghost back-btn">← 지원 내역으로</button>
+        <div class="detail-header">
+          <div>
+            <h2 id="detailTitle" class="view-title"></h2>
+            <div class="detail-chips" id="detailChips"></div>
+          </div>
+          <div class="detail-actions">
+            <button type="button" id="editInfoBtn" class="btn-ghost">수정</button>
+            <button type="button" id="deleteAppBtn" class="btn-danger-ghost">삭제</button>
+          </div>
+        </div>
+
+        <div id="editInfoPanel" class="edit-info-panel" hidden></div>
+
+        <div class="detail-body">
+          <div class="timeline-col">
+            <h3>전형 진행 단계</h3>
+            <div id="timeline" class="timeline"></div>
+            <button type="button" id="addStageBtn" class="btn-ghost">+ 단계 추가</button>
+          </div>
+          <div class="memo-col">
+            <h3>기업 메모</h3>
+            <textarea id="companyMemoInput" rows="10" placeholder="기업 문화, 준비 포인트, 공고 핵심 요구사항 등"></textarea>
+          </div>
+        </div>
+      </section>
+
+      <section id="view-stats" class="view" hidden>
+        <h2 class="view-title">통계</h2>
+        <div class="kpi-grid" id="statsKpiGrid"></div>
+        <div class="rate-grid" id="statsRateGrid"></div>
+
+        <h3 style="margin:22px 0 10px;font-size:14px;">월별 지원 추이</h3>
+        <div class="chart-card">
+          <div id="applyTrendDelta" class="chart-delta"></div>
+          <div id="applyTrendChart"></div>
+        </div>
+
+        <h3 style="margin:22px 0 10px;font-size:14px;">월별 최종 합격 추이</h3>
+        <div class="chart-card">
+          <div id="passTrendDelta" class="chart-delta"></div>
+          <div id="passTrendChart"></div>
+        </div>
+
+        <h3 style="margin:22px 0 10px;font-size:14px;">포지션별 지원 현황</h3>
+        <table class="simple-table" id="positionStatsTable"></table>
+      </section>
+
+      <section id="view-calendar" class="view" hidden>
+        <h2 class="view-title">캘린더</h2>
+        <div class="calendar-toolbar">
+          <button type="button" id="calPrevBtn" class="btn-ghost">◀</button>
+          <span id="calMonthLabel" class="calendar-month-label"></span>
+          <button type="button" id="calNextBtn" class="btn-ghost">▶</button>
+          <button type="button" id="calTodayBtn" class="btn-ghost">오늘</button>
+          <div class="calendar-legend">
+            <span class="legend-item"><span class="legend-dot dot-apply"></span>지원</span>
+            <span class="legend-item"><span class="legend-dot dot-interview"></span>면접</span>
+            <span class="legend-item"><span class="legend-dot dot-assignment"></span>과제</span>
+            <span class="legend-item"><span class="legend-dot dot-other"></span>기타 전형</span>
+          </div>
+        </div>
+        <div id="calendarGrid" class="calendar-grid"></div>
+      </section>
+
+      <section id="view-notes" class="view" hidden>
+        <h2 class="view-title">메모</h2>
+        <p class="view-sub">기업 메모 또는 전형별 메모가 있는 지원 건만 모아 보여줍니다.</p>
+        <div id="notesList" class="notes-list"></div>
+        <p id="notesEmptyMsg" class="empty-msg" hidden>작성된 메모가 없습니다.</p>
+      </section>
+
+      <section id="view-settings" class="view" hidden>
+        <h2 class="view-title">설정</h2>
+
+        <div class="settings-card">
+          <h3>백업</h3>
+          <p>지원 기록을 JSON 파일로 내보내거나 불러올 수 있습니다.</p>
+          <div class="settings-actions">
+            <button type="button" id="exportBtn" class="btn-secondary">내보내기</button>
+            <button type="button" id="importBtn" class="btn-secondary">가져오기</button>
+            <input type="file" id="importFile" accept="application/json" hidden>
+          </div>
+        </div>
+
+        <div class="settings-card">
+          <h3>비밀번호 변경</h3>
+          <form id="changePwForm" class="settings-form">
+            <input type="password" id="currentPw" placeholder="현재 비밀번호" required>
+            <input type="password" id="newPwSettings" placeholder="새 비밀번호" required minlength="4">
+            <p class="auth-error" id="changePwError" hidden></p>
+            <button type="submit" class="btn-secondary">변경하기</button>
+          </form>
+        </div>
+
+        <div class="settings-card">
+          <h3>새 기록으로 시작하기</h3>
+          <p>현재 기록은 그대로 둔 채, 새 비밀번호로 완전히 새로운 기록을 시작합니다.</p>
+          <button type="button" id="startFreshBtn" class="btn-secondary">새 기록 시작</button>
+        </div>
+
+        <div class="settings-card danger">
+          <h3>전체 삭제</h3>
+          <p>현재 기록의 모든 지원 내역을 삭제합니다. 되돌릴 수 없습니다.</p>
+          <button type="button" id="wipeDataBtn" class="btn-danger">전체 삭제</button>
+        </div>
+      </section>
+
+      <section id="view-help" class="view" hidden>
+        <h2 class="view-title">도움말</h2>
+        <div class="help-content">
+          <h4>기본 사용법</h4>
+          <ul>
+            <li>우측 상단 "기록 추가"로 새 지원 건을 등록합니다. 기업명, 포지션, 지원일은 필수입니다.</li>
+            <li>지원 내역 목록에서 기업명을 클릭하면 상세 페이지로 이동합니다.</li>
+            <li>전형 단계 상태·날짜·메모 등 모든 수정은 상세 페이지에서 이루어집니다.</li>
+          </ul>
+          <h4>전형 단계</h4>
+          <ul>
+            <li>기본 단계는 서류 → 1차 면접 → 과제 전형 → 임원 면접 → 최종 결과이지만, 자유롭게 이름을 바꾸거나 추가·삭제·순서 변경할 수 있습니다.</li>
+            <li>상태를 합격/불합격으로 바꾸면 결과일이 오늘 날짜로 자동 기록되며, 언제든 직접 수정할 수 있습니다.</li>
+          </ul>
+          <h4>중복 지원 확인</h4>
+          <ul>
+            <li>기록 추가 시 동일 기업명을 입력하면 과거 지원 이력이 안내됩니다. 중복이어도 등록은 항상 가능합니다.</li>
+          </ul>
+          <h4>합격률 계산</h4>
+          <ul>
+            <li>단계별 합격률은 "N번째 전형"을 기준으로, 결과가 확정된(합격/불합격) 건만 분모로 계산합니다. 지원철회 건은 제외됩니다.</li>
+          </ul>
+          <h4>비밀번호와 데이터 보관</h4>
+          <ul>
+            <li>모든 데이터는 이 브라우저(localStorage)에만 저장되며, 서버로 전송되지 않습니다.</li>
+            <li>비밀번호는 같은 브라우저 안에서 여러 기록을 구분하는 용도이며 실제 암호화 보안은 아닙니다.</li>
+            <li>브라우저 데이터 삭제 시 기록도 함께 사라지므로, 설정 메뉴의 "내보내기"로 주기적으로 백업하세요.</li>
+          </ul>
+        </div>
+      </section>
+
+    </main>
+  </div>
+</div>
+
+<div id="addDrawerOverlay" class="drawer-overlay" hidden>
+  <aside class="drawer">
+    <div class="drawer-header">
+      <h2>지원 기록 추가</h2>
+      <button type="button" id="closeDrawerBtn" class="btn-icon">✕</button>
+    </div>
+    <div id="dupWarning" class="dup-warning" hidden></div>
+    <form id="addForm" class="drawer-form">
+      <label>기업명 *</label>
+      <input type="text" id="addCompany" required>
+      <label>지원 포지션 *</label>
+      <input type="text" id="addPosition" required>
+      <label>지원일 *</label>
+      <input type="date" id="addAppliedAt" required>
+      <label>공고 URL</label>
+      <input type="url" id="addUrl" placeholder="https://...">
+      <label>기업 메모</label>
+      <textarea id="addMemo" rows="3"></textarea>
+
+      <div class="stage-config">
+        <button type="button" id="toggleStageConfigBtn" class="stage-config-toggle">전형 단계 설정 ▸</button>
+        <div id="stageConfigBody" class="stage-config-body" hidden>
+          <div id="stageConfigList"></div>
+          <button type="button" id="addStageConfigBtn" class="btn-ghost">+ 단계 추가</button>
+        </div>
+      </div>
+
+      <div class="drawer-actions">
+        <button type="button" id="cancelAddBtn" class="btn-ghost">취소</button>
+        <button type="submit" class="btn-primary">저장</button>
+      </div>
+    </form>
+  </aside>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
