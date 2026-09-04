@@ -1,46 +1,36 @@
-const ACCOUNTS_KEY = 'jat_accounts';
-const SESSION_KEY = 'jat_session';
+const SUPABASE_URL = 'https://wpnsgxcojxhabnnddikw.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndwbnNneGNvanhoYWJubmRkaWt3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODg1MDYwMjUsImV4cCI6MjEwNDA4MjAyNX0.tmEOkufn95jcoY1qp-5RBcbkBqsELDoaURQdNOLAnLI';
+const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+const LEGACY_MIGRATED_KEY = 'jat_migrated_v2';
 const STAGE_STATUSES = ['예정', '결과대기', '합격', '불합격', '지원철회'];
+const DOCUMENT_STAGE_STATUSES = ['예정', '서류 확인', '결과대기', '합격', '불합격', '지원철회'];
 const DEFAULT_STAGE_NAMES = ['서류', '1차 면접', '과제 전형', '임원 면접', '최종 결과'];
 
-let storageWarned = false;
 let currentUserId = null;
+let currentUserEmail = '';
 let applications = [];
 let draftStages = [];
 let currentDetailId = null;
 
-function warnStorage() {
-  if (storageWarned) return;
-  storageWarned = true;
-  alert('이 브라우저 환경에서는 자동 저장이 되지 않습니다.\n작업 후 설정 메뉴의 "내보내기"로 꼭 백업해주세요.');
-}
-
 function safeGet(key) {
-  try { return localStorage.getItem(key); } catch (e) { console.error(e); warnStorage(); return null; }
+  try { return localStorage.getItem(key); } catch (e) { return null; }
 }
 function safeSet(key, value) {
-  try { localStorage.setItem(key, value); } catch (e) { console.error(e); warnStorage(); }
-}
-function safeRemove(key) {
-  try { localStorage.removeItem(key); } catch (e) { console.error(e); }
+  try { localStorage.setItem(key, value); return true; } catch (e) { return false; }
 }
 
 function makeId() {
   try { if (crypto && crypto.randomUUID) return crypto.randomUUID(); } catch (e) {}
-  return 'id-' + Date.now() + '-' + Math.random().toString(36).slice(2, 10);
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, ch => {
+    const r = Math.random() * 16 | 0;
+    const v = ch === 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
 }
 
-async function hashPassword(pw) {
-  try {
-    if (crypto && crypto.subtle && crypto.subtle.digest) {
-      const enc = new TextEncoder().encode(pw);
-      const buf = await crypto.subtle.digest('SHA-256', enc);
-      return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
-    }
-  } catch (e) { console.error(e); }
-  let h = 0;
-  for (let i = 0; i < pw.length; i++) h = (h * 31 + pw.charCodeAt(i)) | 0;
-  return 'fb-' + Math.abs(h).toString(16) + '-' + pw.length;
+function isValidUuid(v) {
+  return typeof v === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
 }
 
 function todayStr() {
@@ -59,24 +49,108 @@ function isSafeUrl(url) {
   return /^https?:\/\//i.test(url);
 }
 
-function getAccounts() {
-  try { return JSON.parse(safeGet(ACCOUNTS_KEY) || '[]'); } catch (e) { return []; }
+function updateSaveStatus(state) {
+  const el = document.getElementById('saveStatus');
+  if (!el) return;
+  if (state === 'saving') { el.textContent = '저장 중...'; el.className = 'save-status'; }
+  else if (state === 'saved') { el.textContent = '저장됨'; el.className = 'save-status ok'; }
+  else if (state === 'error') { el.textContent = '저장 실패'; el.className = 'save-status error'; }
+  else { el.textContent = ''; el.className = 'save-status'; }
 }
-function saveAccounts(accounts) {
-  safeSet(ACCOUNTS_KEY, JSON.stringify(accounts));
-}
-function dataKey(userId) { return `jat_data_${userId}`; }
 
-function loadUserData(userId) {
-  try {
-    const raw = safeGet(dataKey(userId));
-    const parsed = raw ? JSON.parse(raw) : { applications: [] };
-    return Array.isArray(parsed.applications) ? parsed.applications : [];
-  } catch (e) { return []; }
+/* ---------- Supabase 데이터 매핑 / CRUD ---------- */
+
+function rowToApp(row) {
+  return {
+    id: row.id,
+    companyName: row.company_name,
+    position: row.position,
+    appliedAt: row.applied_at,
+    jobPostingUrl: row.job_url || '',
+    companyMemo: row.memo || '',
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    stages: (row.stages || []).slice().sort((a, b) => a.order_index - b.order_index).map(s => ({
+      id: s.id,
+      name: s.name,
+      status: s.status,
+      scheduledAt: s.scheduled_at || '',
+      resultAt: s.result_at || '',
+      documentCheckedAt: s.document_checked_at || '',
+      memo: s.memo || ''
+    }))
+  };
 }
-function saveUserData() {
-  if (!currentUserId) return;
-  safeSet(dataKey(currentUserId), JSON.stringify({ applications }));
+
+function appToRow(app) {
+  return {
+    id: app.id,
+    user_id: currentUserId,
+    company_name: app.companyName,
+    position: app.position,
+    applied_at: app.appliedAt,
+    job_url: app.jobPostingUrl || null,
+    memo: app.companyMemo || null
+  };
+}
+
+function stagesToRows(app) {
+  return app.stages.map((s, idx) => ({
+    id: s.id,
+    application_id: app.id,
+    name: s.name,
+    order_index: idx,
+    status: s.status,
+    scheduled_at: s.scheduledAt || null,
+    result_at: s.resultAt || null,
+    document_checked_at: s.documentCheckedAt || null,
+    memo: s.memo || null
+  }));
+}
+
+async function loadApplicationsFromServer() {
+  const { data, error } = await supabaseClient
+    .from('applications')
+    .select('*, stages(*)')
+    .order('applied_at', { ascending: false });
+  if (error) {
+    console.error(error);
+    alert('데이터를 불러오지 못했습니다: ' + error.message);
+    applications = [];
+    return;
+  }
+  applications = (data || []).map(rowToApp);
+}
+
+async function upsertApplicationRaw(app) {
+  const { error: appErr } = await supabaseClient.from('applications').upsert(appToRow(app));
+  if (appErr) { console.error(appErr); return { ok: false, message: appErr.message }; }
+  if (app.stages && app.stages.length) {
+    const { error: stageErr } = await supabaseClient.from('stages').upsert(stagesToRows(app));
+    if (stageErr) { console.error(stageErr); return { ok: false, message: stageErr.message }; }
+  }
+  return { ok: true };
+}
+
+async function saveApplication(app) {
+  updateSaveStatus('saving');
+  const result = await upsertApplicationRaw(app);
+  if (!result.ok) { updateSaveStatus('error'); alert('저장 실패: ' + result.message); return false; }
+  updateSaveStatus('saved');
+  return true;
+}
+
+async function deleteApplicationRemote(id) {
+  updateSaveStatus('saving');
+  const { error } = await supabaseClient.from('applications').delete().eq('id', id);
+  if (error) { console.error(error); updateSaveStatus('error'); alert('삭제 실패: ' + error.message); return false; }
+  updateSaveStatus('saved');
+  return true;
+}
+
+async function deleteStageRemote(id) {
+  const { error } = await supabaseClient.from('stages').delete().eq('id', id);
+  if (error) console.error(error);
 }
 
 /* ---------- 계산 로직 ---------- */
@@ -464,6 +538,7 @@ function stageIcon(status) {
   if (status === '불합격') return { char: '✕', cls: 'status-불합격' };
   if (status === '지원철회') return { char: '⊘', cls: 'status-지원철회' };
   if (status === '결과대기') return { char: '●', cls: 'status-결과대기' };
+  if (status === '서류 확인') return { char: '◐', cls: 'status-서류확인' };
   return { char: '○', cls: 'status-예정' };
 }
 
@@ -500,6 +575,13 @@ function renderTimeline(app) {
     const icon = stageIcon(s.status);
     const isLast = idx === app.stages.length - 1;
     const onlyOne = app.stages.length === 1;
+    const isDocStage = idx === 0;
+    const statusOptions = isDocStage ? DOCUMENT_STAGE_STATUSES : STAGE_STATUSES;
+    const docField = isDocStage ? `
+          <div>
+            <label>서류 확인일</label>
+            <input type="date" data-field="documentCheckedAt" value="${s.documentCheckedAt || ''}">
+          </div>` : '';
     return `<div class="timeline-item" data-stage-id="${s.id}">
       <div class="timeline-track">
         <div class="timeline-icon ${icon.cls}">${icon.char}</div>
@@ -516,7 +598,7 @@ function renderTimeline(app) {
           <div>
             <label>상태</label>
             <select data-field="status">
-              ${STAGE_STATUSES.map(st => `<option value="${st}" ${s.status === st ? 'selected' : ''}>${st}</option>`).join('')}
+              ${statusOptions.map(st => `<option value="${st}" ${s.status === st ? 'selected' : ''}>${st}</option>`).join('')}
             </select>
           </div>
           <div>
@@ -526,7 +608,7 @@ function renderTimeline(app) {
           <div>
             <label>결과일</label>
             <input type="date" data-field="resultAt" value="${s.resultAt || ''}">
-          </div>
+          </div>${docField}
         </div>
         <textarea class="timeline-memo" data-field="memo" rows="2" placeholder="전형별 메모">${escapeHtml(s.memo || '')}</textarea>
       </div>
@@ -558,45 +640,121 @@ function showView(name) {
 function showAuthScreen(defaultTab) {
   document.getElementById('appShell').hidden = true;
   document.getElementById('authScreen').hidden = false;
-  document.getElementById('newPw').value = '';
-  document.getElementById('newPw2').value = '';
-  document.getElementById('loadPw').value = '';
-  document.getElementById('newAccountError').hidden = true;
-  document.getElementById('loadAccountError').hidden = true;
-  activateAuthTab(defaultTab || 'new');
+  document.getElementById('loginEmail').value = '';
+  document.getElementById('loginPw').value = '';
+  document.getElementById('signupEmail').value = '';
+  document.getElementById('signupPw').value = '';
+  document.getElementById('signupPw2').value = '';
+  document.getElementById('loginError').hidden = true;
+  document.getElementById('signupError').hidden = true;
+  activateAuthTab(defaultTab || 'login');
 }
 
 function activateAuthTab(tab) {
   document.querySelectorAll('.auth-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
-  document.getElementById('newAccountForm').hidden = tab !== 'new';
-  document.getElementById('loadAccountForm').hidden = tab !== 'load';
+  document.getElementById('loginForm').hidden = tab !== 'login';
+  document.getElementById('signupForm').hidden = tab !== 'signup';
+  document.getElementById('forgotForm').hidden = true;
+  document.getElementById('recoveryForm').hidden = true;
 }
 
-function loginAs(userId) {
-  currentUserId = userId;
-  applications = loadUserData(userId);
-  safeSet(SESSION_KEY, userId);
+function showForgotForm() {
+  document.getElementById('loginForm').hidden = true;
+  document.getElementById('signupForm').hidden = true;
+  document.getElementById('recoveryForm').hidden = true;
+  document.getElementById('forgotForm').hidden = false;
+}
+
+function showRecoveryForm() {
+  document.getElementById('appShell').hidden = true;
+  document.getElementById('authScreen').hidden = false;
+  document.getElementById('loginForm').hidden = true;
+  document.getElementById('signupForm').hidden = true;
+  document.getElementById('forgotForm').hidden = true;
+  document.getElementById('recoveryForm').hidden = false;
+  document.querySelectorAll('.auth-tab').forEach(b => b.classList.remove('active'));
+}
+
+async function enterApp(session) {
+  currentUserId = session.user.id;
+  currentUserEmail = session.user.email || '';
+  document.getElementById('dropdownEmail').textContent = currentUserEmail;
   document.getElementById('authScreen').hidden = true;
   document.getElementById('appShell').hidden = false;
+  await loadApplicationsFromServer();
+  await maybeOfferMigration();
   showView('list');
 }
 
-function lock() {
-  currentUserId = null;
-  applications = [];
-  safeRemove(SESSION_KEY);
-  showAuthScreen('load');
+function collectLegacyApplications() {
+  const result = [];
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && key.indexOf('jat_data_') === 0) {
+        try {
+          const parsed = JSON.parse(localStorage.getItem(key) || '{}');
+          if (Array.isArray(parsed.applications)) result.push(...parsed.applications);
+        } catch (e) {}
+      }
+    }
+  } catch (e) {}
+  return result;
+}
+
+async function maybeOfferMigration() {
+  if (safeGet(LEGACY_MIGRATED_KEY)) return;
+  const legacy = collectLegacyApplications();
+  if (!legacy.length) { safeSet(LEGACY_MIGRATED_KEY, '1'); return; }
+  const proceed = confirm(`기존 브라우저에 저장된 지원 기록 ${legacy.length}건을 발견했습니다.\n\n현재 계정으로 가져오시겠습니까?`);
+  if (!proceed) { safeSet(LEGACY_MIGRATED_KEY, '1'); return; }
+
+  updateSaveStatus('saving');
+  let successCount = 0;
+  let firstError = '';
+  for (const app of legacy) {
+    if (!isValidUuid(app.id)) app.id = makeId();
+    (app.stages || []).forEach(s => { if (!isValidUuid(s.id)) s.id = makeId(); });
+    const result = await upsertApplicationRaw(app);
+    if (result.ok) successCount++;
+    else if (!firstError) firstError = result.message;
+  }
+  await loadApplicationsFromServer();
+  showView('list');
+
+  if (successCount === legacy.length) {
+    updateSaveStatus('saved');
+    alert(`${successCount}개의 지원 기록을 계정으로 가져왔습니다.`);
+    safeSet(LEGACY_MIGRATED_KEY, '1');
+  } else if (successCount > 0) {
+    updateSaveStatus('error');
+    alert(`${successCount}개는 가져왔지만 ${legacy.length - successCount}개는 실패했습니다.\n오류: ${firstError}\n\n새로고침하면 실패한 항목만 다시 시도합니다.`);
+  } else {
+    updateSaveStatus('error');
+    alert(`가져오기에 실패했습니다.\n오류: ${firstError}\n\nSupabase에서 schema.sql이 정상적으로 실행되었는지 확인해주세요.`);
+  }
 }
 
 async function init() {
   wireEvents();
   document.getElementById('addAppliedAt').value = todayStr();
-  const savedSession = safeGet(SESSION_KEY);
-  if (savedSession) {
-    const acc = getAccounts().find(a => a.id === savedSession);
-    if (acc) { loginAs(acc.id); return; }
-  }
-  showAuthScreen('new');
+
+  supabaseClient.auth.onAuthStateChange(async (event, session) => {
+    if (event === 'PASSWORD_RECOVERY') {
+      showRecoveryForm();
+      return;
+    }
+    if (session && session.user) {
+      if (currentUserId === session.user.id) return;
+      await enterApp(session);
+    } else {
+      currentUserId = null;
+      currentUserEmail = '';
+      applications = [];
+      document.getElementById('appShell').hidden = true;
+      showAuthScreen('login');
+    }
+  });
 }
 
 /* ---------- 이벤트 바인딩 ---------- */
@@ -606,39 +764,63 @@ function wireEvents() {
     btn.addEventListener('click', () => activateAuthTab(btn.dataset.tab));
   });
 
-  document.getElementById('newAccountForm').addEventListener('submit', async e => {
+  document.getElementById('signupForm').addEventListener('submit', async e => {
     e.preventDefault();
-    const pw = document.getElementById('newPw').value;
-    const pw2 = document.getElementById('newPw2').value;
-    const errEl = document.getElementById('newAccountError');
+    const email = document.getElementById('signupEmail').value.trim();
+    const pw = document.getElementById('signupPw').value;
+    const pw2 = document.getElementById('signupPw2').value;
+    const errEl = document.getElementById('signupError');
     if (pw !== pw2) { errEl.textContent = '비밀번호가 일치하지 않습니다.'; errEl.hidden = false; return; }
-    if (pw.length < 4) { errEl.textContent = '비밀번호는 4자 이상이어야 합니다.'; errEl.hidden = false; return; }
+    if (pw.length < 6) { errEl.textContent = '비밀번호는 6자 이상이어야 합니다.'; errEl.hidden = false; return; }
     errEl.hidden = true;
-    const passwordHash = await hashPassword(pw);
-    const accounts = getAccounts();
-    const id = makeId();
-    accounts.push({ id, passwordHash, createdAt: todayStr() });
-    saveAccounts(accounts);
-    safeSet(dataKey(id), JSON.stringify({ applications: [] }));
-    loginAs(id);
+    const { data, error } = await supabaseClient.auth.signUp({ email, password: pw });
+    if (error) { errEl.textContent = error.message; errEl.hidden = false; return; }
+    if (!data.session) {
+      alert('가입 확인 이메일을 보냈습니다. 메일함을 확인한 뒤 로그인해주세요.');
+      activateAuthTab('login');
+    }
   });
 
-  document.getElementById('loadAccountForm').addEventListener('submit', async e => {
+  document.getElementById('loginForm').addEventListener('submit', async e => {
     e.preventDefault();
-    const pw = document.getElementById('loadPw').value;
-    const errEl = document.getElementById('loadAccountError');
-    const passwordHash = await hashPassword(pw);
-    const acc = getAccounts().find(a => a.passwordHash === passwordHash);
-    if (!acc) { errEl.textContent = '일치하는 기록을 찾을 수 없습니다.'; errEl.hidden = false; return; }
+    const email = document.getElementById('loginEmail').value.trim();
+    const pw = document.getElementById('loginPw').value;
+    const errEl = document.getElementById('loginError');
+    const { error } = await supabaseClient.auth.signInWithPassword({ email, password: pw });
+    if (error) { errEl.textContent = '이메일 또는 비밀번호가 올바르지 않습니다.'; errEl.hidden = false; return; }
     errEl.hidden = true;
-    loginAs(acc.id);
+  });
+
+  document.getElementById('forgotLinkBtn').addEventListener('click', showForgotForm);
+  document.getElementById('backToLoginBtn').addEventListener('click', () => activateAuthTab('login'));
+
+  document.getElementById('forgotForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    const email = document.getElementById('forgotEmail').value.trim();
+    const { error } = await supabaseClient.auth.resetPasswordForEmail(email, {
+      redirectTo: window.location.origin + window.location.pathname
+    });
+    const msgEl = document.getElementById('forgotMsg');
+    msgEl.hidden = false;
+    if (error) { msgEl.textContent = error.message; msgEl.className = 'auth-error'; }
+    else { msgEl.textContent = '재설정 링크를 이메일로 보냈습니다.'; msgEl.className = 'auth-note'; }
+  });
+
+  document.getElementById('recoveryForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    const pw = document.getElementById('recoveryPw').value;
+    const errEl = document.getElementById('recoveryError');
+    if (pw.length < 6) { errEl.textContent = '비밀번호는 6자 이상이어야 합니다.'; errEl.hidden = false; return; }
+    errEl.hidden = true;
+    const { error } = await supabaseClient.auth.updateUser({ password: pw });
+    if (error) { errEl.textContent = error.message; errEl.hidden = false; return; }
+    alert('비밀번호가 변경되었습니다. 다시 로그인해주세요.');
+    await supabaseClient.auth.signOut();
   });
 
   document.querySelectorAll('.nav-item').forEach(btn => {
     btn.addEventListener('click', () => showView(btn.dataset.view));
   });
-
-  document.getElementById('switchAccountBtn').addEventListener('click', () => lock());
 
   const accountMenuBtn = document.getElementById('accountMenuBtn');
   const accountDropdown = document.getElementById('accountDropdown');
@@ -646,7 +828,9 @@ function wireEvents() {
   document.addEventListener('click', e => {
     if (!accountMenuBtn.contains(e.target) && !accountDropdown.contains(e.target)) accountDropdown.hidden = true;
   });
-  document.getElementById('lockBtn').addEventListener('click', () => lock());
+  document.getElementById('lockBtn').addEventListener('click', async () => {
+    await supabaseClient.auth.signOut();
+  });
 
   document.getElementById('backToListBtn').addEventListener('click', () => showView('list'));
 
@@ -757,7 +941,7 @@ function wireDrawer() {
     draftStages[Number(row.dataset.idx)].name = e.target.value;
   });
 
-  document.getElementById('addForm').addEventListener('submit', e => {
+  document.getElementById('addForm').addEventListener('submit', async e => {
     e.preventDefault();
     const companyName = companyInput.value.trim();
     const position = document.getElementById('addPosition').value.trim();
@@ -775,18 +959,21 @@ function wireDrawer() {
     const stages = draftStages.map((s, idx) => ({
       id: s.id, name: s.name.trim() || `단계 ${idx + 1}`,
       status: idx === 0 ? '결과대기' : '예정',
-      scheduledAt: '', resultAt: '', memo: ''
+      scheduledAt: '', resultAt: '', documentCheckedAt: '', memo: ''
     }));
 
-    applications.push({
+    const newApp = {
       id: makeId(),
       companyName, position, appliedAt,
       jobPostingUrl: document.getElementById('addUrl').value.trim(),
       companyMemo: document.getElementById('addMemo').value.trim(),
       createdAt: now, updatedAt: now,
       stages
-    });
-    saveUserData();
+    };
+
+    const ok = await saveApplication(newApp);
+    if (!ok) return;
+    applications.push(newApp);
     closeDrawer();
     showView('list');
   });
@@ -814,55 +1001,60 @@ function wireDetail() {
         </div>
       `;
       document.getElementById('editInfoCancel').addEventListener('click', () => { panel.hidden = true; });
-      document.getElementById('editInfoSave').addEventListener('click', () => {
+      document.getElementById('editInfoSave').addEventListener('click', async () => {
         const companyName = document.getElementById('editCompanyName').value.trim();
         const position = document.getElementById('editPosition').value.trim();
         const appliedAt = document.getElementById('editAppliedAt').value;
         if (!companyName || !position || !appliedAt) return;
+        const prev = { companyName: app.companyName, position: app.position, appliedAt: app.appliedAt, jobPostingUrl: app.jobPostingUrl };
         app.companyName = companyName;
         app.position = position;
         app.appliedAt = appliedAt;
         app.jobPostingUrl = document.getElementById('editUrl').value.trim();
-        app.updatedAt = new Date().toISOString();
-        saveUserData();
+        const ok = await saveApplication(app);
+        if (!ok) { Object.assign(app, prev); return; }
         renderDetail(app.id);
       });
     }
   });
 
-  document.getElementById('companyMemoInput').addEventListener('blur', () => {
+  document.getElementById('companyMemoInput').addEventListener('blur', async () => {
     const app = applications.find(a => a.id === currentDetailId);
     if (!app) return;
-    app.companyMemo = document.getElementById('companyMemoInput').value.trim();
-    saveUserData();
+    const val = document.getElementById('companyMemoInput').value.trim();
+    if (val === app.companyMemo) return;
+    app.companyMemo = val;
+    await saveApplication(app);
   });
 
-  document.getElementById('deleteAppBtn').addEventListener('click', () => {
+  document.getElementById('deleteAppBtn').addEventListener('click', async () => {
     const app = applications.find(a => a.id === currentDetailId);
     if (!app) return;
     if (!confirm(`이 지원 기록을 삭제하시겠습니까?\n삭제한 기록은 복구할 수 없습니다.`)) return;
+    const ok = await deleteApplicationRemote(app.id);
+    if (!ok) return;
     applications = applications.filter(a => a.id !== app.id);
-    saveUserData();
     showView('list');
   });
 
-  document.getElementById('addStageBtn').addEventListener('click', () => {
+  document.getElementById('addStageBtn').addEventListener('click', async () => {
     const app = applications.find(a => a.id === currentDetailId);
     if (!app) return;
-    app.stages.push({ id: makeId(), name: `단계 ${app.stages.length + 1}`, status: '예정', scheduledAt: '', resultAt: '', memo: '' });
-    saveUserData();
+    app.stages.push({ id: makeId(), name: `단계 ${app.stages.length + 1}`, status: '예정', scheduledAt: '', resultAt: '', documentCheckedAt: '', memo: '' });
+    await saveApplication(app);
     renderDetail(app.id);
   });
 
   const timeline = document.getElementById('timeline');
 
-  timeline.addEventListener('click', e => {
+  timeline.addEventListener('click', async e => {
     const btn = e.target.closest('button');
     if (!btn) return;
     const app = applications.find(a => a.id === currentDetailId);
     if (!app) return;
     const item = btn.closest('.timeline-item');
     const idx = app.stages.findIndex(s => s.id === item.dataset.stageId);
+    let removedId = null;
     if (btn.dataset.act === 'up' && idx > 0) {
       [app.stages[idx - 1], app.stages[idx]] = [app.stages[idx], app.stages[idx - 1]];
     } else if (btn.dataset.act === 'down' && idx < app.stages.length - 1) {
@@ -870,15 +1062,17 @@ function wireDetail() {
     } else if (btn.dataset.act === 'remove') {
       if (app.stages.length <= 1) return;
       if (!confirm('이 전형 단계를 삭제하시겠습니까?')) return;
+      removedId = app.stages[idx].id;
       app.stages.splice(idx, 1);
     } else {
       return;
     }
-    saveUserData();
+    await saveApplication(app);
+    if (removedId) await deleteStageRemote(removedId);
     renderDetail(app.id);
   });
 
-  timeline.addEventListener('change', e => {
+  timeline.addEventListener('change', async e => {
     const field = e.target.dataset.field;
     if (!field || field === 'name' || field === 'memo') return;
     const app = applications.find(a => a.id === currentDetailId);
@@ -894,14 +1088,19 @@ function wireDetail() {
       } else {
         stage.resultAt = '';
       }
+      if (stage.status === '서류 확인') {
+        stage.documentCheckedAt = todayStr();
+      } else if (stage.status === '예정') {
+        stage.documentCheckedAt = '';
+      }
     }
-    saveUserData();
+    await saveApplication(app);
     const warnings = checkDateWarnings(app, stage);
     renderDetail(app.id);
     if (warnings.length) alert(warnings.join('\n'));
   });
 
-  timeline.addEventListener('blur', e => {
+  timeline.addEventListener('blur', async e => {
     const field = e.target.dataset.field;
     if (field !== 'name' && field !== 'memo') return;
     const app = applications.find(a => a.id === currentDetailId);
@@ -909,8 +1108,10 @@ function wireDetail() {
     const item = e.target.closest('.timeline-item');
     const stage = findStage(app, item.dataset.stageId);
     if (!stage) return;
-    stage[field] = e.target.value.trim();
-    saveUserData();
+    const val = e.target.value.trim();
+    if (val === stage[field]) return;
+    stage[field] = val;
+    await saveApplication(app);
   }, true);
 }
 
@@ -935,14 +1136,30 @@ function wireSettings() {
     const file = e.target.files[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = () => {
+    reader.onload = async () => {
       try {
         const data = JSON.parse(reader.result);
         if (!Array.isArray(data)) throw new Error('invalid');
-        if (confirm(`${data.length}건의 데이터를 가져옵니다. 현재 기록을 덮어쓸까요?`)) {
-          applications = data;
-          saveUserData();
+        if (confirm(`${data.length}건의 데이터를 서버 계정으로 가져옵니다. 계속할까요?`)) {
+          updateSaveStatus('saving');
+          let successCount = 0;
+          let firstError = '';
+          for (const app of data) {
+            if (!isValidUuid(app.id)) app.id = makeId();
+            (app.stages || []).forEach(s => { if (!isValidUuid(s.id)) s.id = makeId(); });
+            const result = await upsertApplicationRaw(app);
+            if (result.ok) successCount++;
+            else if (!firstError) firstError = result.message;
+          }
+          await loadApplicationsFromServer();
           showView('list');
+          if (successCount === data.length) {
+            updateSaveStatus('saved');
+            alert(`${successCount}건을 가져왔습니다.`);
+          } else {
+            updateSaveStatus('error');
+            alert(`${successCount}/${data.length}건만 가져왔습니다.\n오류: ${firstError}`);
+          }
         }
       } catch (err) {
         alert('올바른 JSON 파일이 아닙니다.');
@@ -955,38 +1172,28 @@ function wireSettings() {
   document.getElementById('changePwForm').addEventListener('submit', async e => {
     e.preventDefault();
     const errEl = document.getElementById('changePwError');
-    const currentPw = document.getElementById('currentPw').value;
     const newPw = document.getElementById('newPwSettings').value;
-    const accounts = getAccounts();
-    const acc = accounts.find(a => a.id === currentUserId);
-    const curHash = await hashPassword(currentPw);
-    if (!acc || acc.passwordHash !== curHash) {
-      errEl.textContent = '현재 비밀번호가 일치하지 않습니다.';
+    if (newPw.length < 6) {
+      errEl.textContent = '새 비밀번호는 6자 이상이어야 합니다.';
       errEl.hidden = false;
       return;
     }
-    if (newPw.length < 4) {
-      errEl.textContent = '새 비밀번호는 4자 이상이어야 합니다.';
+    const { error } = await supabaseClient.auth.updateUser({ password: newPw });
+    if (error) {
+      errEl.textContent = error.message;
       errEl.hidden = false;
       return;
     }
     errEl.hidden = true;
-    acc.passwordHash = await hashPassword(newPw);
-    saveAccounts(accounts);
     document.getElementById('changePwForm').reset();
     alert('비밀번호가 변경되었습니다.');
   });
 
-  document.getElementById('startFreshBtn').addEventListener('click', () => {
-    if (!confirm('현재 기록에서 로그아웃하고 새 비밀번호로 새 기록을 시작합니다. 계속할까요?')) return;
-    lock();
-    activateAuthTab('new');
-  });
-
-  document.getElementById('wipeDataBtn').addEventListener('click', () => {
-    if (!confirm('현재 기록의 모든 지원 내역을 삭제합니다. 되돌릴 수 없습니다. 계속할까요?')) return;
+  document.getElementById('wipeDataBtn').addEventListener('click', async () => {
+    if (!confirm('현재 계정의 모든 지원 내역을 삭제합니다. 되돌릴 수 없습니다. 계속할까요?')) return;
+    const { error } = await supabaseClient.from('applications').delete().eq('user_id', currentUserId);
+    if (error) { alert('삭제 실패: ' + error.message); return; }
     applications = [];
-    saveUserData();
     showView('list');
   });
 }

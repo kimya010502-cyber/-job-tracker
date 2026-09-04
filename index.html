@@ -23,27 +23,46 @@
   </div>
   <div class="auth-panel">
     <div class="auth-card">
-      <p class="auth-note">※ 이 비밀번호는 실제 보안 인증이 아니라, 같은 브라우저 안에서 기록을 구분하는 용도로만 사용됩니다. 브라우저 데이터를 지우면 함께 사라지니 꼭 "내보내기"로 백업해두세요.</p>
-
       <div class="auth-tabs">
-        <button type="button" class="auth-tab active" data-tab="new">새로 시작하기</button>
-        <button type="button" class="auth-tab" data-tab="load">내 기록 불러오기</button>
+        <button type="button" class="auth-tab active" data-tab="login">로그인</button>
+        <button type="button" class="auth-tab" data-tab="signup">회원가입</button>
       </div>
 
-      <form id="newAccountForm" class="auth-form">
+      <form id="loginForm" class="auth-form">
+        <label>이메일</label>
+        <input type="email" id="loginEmail" required>
         <label>비밀번호</label>
-        <input type="password" id="newPw" required minlength="4">
-        <label>비밀번호 확인</label>
-        <input type="password" id="newPw2" required minlength="4">
-        <p class="auth-error" id="newAccountError" hidden></p>
-        <button type="submit" class="btn-primary">시작하기</button>
+        <input type="password" id="loginPw" required>
+        <p class="auth-error" id="loginError" hidden></p>
+        <button type="submit" class="btn-primary">로그인</button>
+        <button type="button" id="forgotLinkBtn" class="link-btn">비밀번호를 잊으셨나요?</button>
       </form>
 
-      <form id="loadAccountForm" class="auth-form" hidden>
+      <form id="signupForm" class="auth-form" hidden>
+        <label>이메일</label>
+        <input type="email" id="signupEmail" required>
         <label>비밀번호</label>
-        <input type="password" id="loadPw" required>
-        <p class="auth-error" id="loadAccountError" hidden></p>
-        <button type="submit" class="btn-primary">불러오기</button>
+        <input type="password" id="signupPw" required minlength="6">
+        <label>비밀번호 확인</label>
+        <input type="password" id="signupPw2" required minlength="6">
+        <p class="auth-error" id="signupError" hidden></p>
+        <button type="submit" class="btn-primary">회원가입</button>
+      </form>
+
+      <form id="forgotForm" class="auth-form" hidden>
+        <label>가입한 이메일</label>
+        <input type="email" id="forgotEmail" required>
+        <p class="auth-error" id="forgotMsg" hidden></p>
+        <button type="submit" class="btn-primary">재설정 링크 보내기</button>
+        <button type="button" id="backToLoginBtn" class="link-btn">로그인으로 돌아가기</button>
+      </form>
+
+      <form id="recoveryForm" class="auth-form" hidden>
+        <p class="auth-sub">새 비밀번호를 설정해주세요.</p>
+        <label>새 비밀번호</label>
+        <input type="password" id="recoveryPw" required minlength="6">
+        <p class="auth-error" id="recoveryError" hidden></p>
+        <button type="submit" class="btn-primary">비밀번호 변경</button>
       </form>
     </div>
   </div>
@@ -53,12 +72,13 @@
   <header class="topbar">
     <div class="topbar-left"><span class="logo">📋 지원 현황 트래커</span></div>
     <div class="topbar-right">
-      <button type="button" id="switchAccountBtn" class="btn-ghost">내 기록 불러오기</button>
+      <span id="saveStatus" class="save-status"></span>
       <button type="button" id="openAddDrawerBtn" class="btn-primary">+ 기록 추가</button>
       <div class="account-menu">
         <button type="button" id="accountMenuBtn" class="btn-icon">👤</button>
         <div id="accountDropdown" class="dropdown" hidden>
-          <button type="button" id="lockBtn">잠금 (로그아웃)</button>
+          <div class="dropdown-email" id="dropdownEmail"></div>
+          <button type="button" id="lockBtn">로그아웃</button>
         </div>
       </div>
     </div>
@@ -196,22 +216,15 @@
         <div class="settings-card">
           <h3>비밀번호 변경</h3>
           <form id="changePwForm" class="settings-form">
-            <input type="password" id="currentPw" placeholder="현재 비밀번호" required>
-            <input type="password" id="newPwSettings" placeholder="새 비밀번호" required minlength="4">
+            <input type="password" id="newPwSettings" placeholder="새 비밀번호" required minlength="6">
             <p class="auth-error" id="changePwError" hidden></p>
             <button type="submit" class="btn-secondary">변경하기</button>
           </form>
         </div>
 
-        <div class="settings-card">
-          <h3>새 기록으로 시작하기</h3>
-          <p>현재 기록은 그대로 둔 채, 새 비밀번호로 완전히 새로운 기록을 시작합니다.</p>
-          <button type="button" id="startFreshBtn" class="btn-secondary">새 기록 시작</button>
-        </div>
-
         <div class="settings-card danger">
           <h3>전체 삭제</h3>
-          <p>현재 기록의 모든 지원 내역을 삭제합니다. 되돌릴 수 없습니다.</p>
+          <p>현재 계정의 모든 지원 내역을 삭제합니다. 되돌릴 수 없습니다.</p>
           <button type="button" id="wipeDataBtn" class="btn-danger">전체 삭제</button>
         </div>
       </section>
@@ -286,6 +299,7 @@
   </aside>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
