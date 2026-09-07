@@ -105,11 +105,21 @@
         <div class="filter-bar">
           <input type="text" id="searchInput" placeholder="기업명 검색">
           <select id="statusFilter">
-            <option value="all">상태: 전체</option>
+            <option value="all">지원 상태: 전체</option>
             <option value="진행중">진행 중</option>
-            <option value="최종합격">최종 합격</option>
-            <option value="불합격">불합격</option>
-            <option value="지원철회">지원철회</option>
+            <option value="종료">종료</option>
+          </select>
+          <select id="stageStatusFilter">
+            <option value="all">전형 상태: 전체</option>
+            <option value="접수완료">접수완료</option>
+            <option value="서류 확인">서류 확인</option>
+            <option value="진행 전">진행 전</option>
+            <option value="결과 대기">결과 대기</option>
+            <option value="통과">통과</option>
+            <option value="탈락">탈락</option>
+            <option value="철회">철회</option>
+            <option value="최종 합격">최종 합격</option>
+            <option value="최종 탈락">최종 탈락</option>
           </select>
           <select id="stageFilter"><option value="all">현재 단계: 전체</option></select>
           <select id="positionFilter"><option value="all">포지션: 전체</option></select>
@@ -119,7 +129,7 @@
         <table class="app-table">
           <thead>
             <tr>
-              <th>기업명</th><th>지원 포지션</th><th>지원일</th><th>현재 단계</th><th>상태</th><th>최근 일정</th><th>메모</th>
+              <th></th><th>기업명</th><th>지원 포지션</th><th>지원일</th><th>현재 단계</th><th>전형 상태</th><th>최근 일정</th><th>메모</th>
             </tr>
           </thead>
           <tbody id="appTableBody"></tbody>

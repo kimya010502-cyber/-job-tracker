@@ -3,9 +3,28 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 const LEGACY_MIGRATED_KEY = 'jat_migrated_v2';
-const STAGE_STATUSES = ['예정', '결과대기', '합격', '불합격', '지원철회'];
-const DOCUMENT_STAGE_STATUSES = ['예정', '서류 확인', '결과대기', '합격', '불합격', '지원철회'];
-const DEFAULT_STAGE_NAMES = ['서류', '1차 면접', '과제 전형', '임원 면접', '최종 결과'];
+
+const STAGE_TYPES = ['document', 'interview', 'assignment', 'final', 'custom'];
+const STAGE_TYPE_LABELS = { document: '서류', interview: '면접', assignment: '과제', final: '최종 결과', custom: '기타' };
+const STATUS_SETS = {
+  document: ['접수완료', '서류 확인', '결과 대기', '통과', '탈락', '철회'],
+  interview: ['진행 전', '결과 대기', '통과', '탈락', '철회'],
+  assignment: ['진행 전', '결과 대기', '통과', '탈락', '철회'],
+  final: ['결과 대기', '최종 합격', '최종 탈락', '철회'],
+  custom: ['진행 전', '결과 대기', '통과', '탈락', '철회']
+};
+const DEFAULT_STAGES = [
+  { name: '서류', type: 'document' },
+  { name: '1차 면접', type: 'interview' },
+  { name: '과제 전형', type: 'assignment' },
+  { name: '임원 면접', type: 'interview' },
+  { name: '최종 결과', type: 'final' }
+];
+const TERMINAL_STATUSES = ['탈락', '철회', '최종 합격', '최종 탈락'];
+const DECIDED_STATUSES = ['통과', '탈락', '최종 합격', '최종 탈락'];
+const PASSED_STATUSES = ['통과', '최종 합격'];
+const PENDING_STATUSES = ['접수완료', '서류 확인', '진행 전', '결과 대기'];
+const STAGE_STATUS_FILTER_OPTIONS = ['접수완료', '서류 확인', '진행 전', '결과 대기', '통과', '탈락', '철회', '최종 합격', '최종 탈락'];
 
 let currentUserId = null;
 let currentUserEmail = '';
@@ -49,6 +68,20 @@ function isSafeUrl(url) {
   return /^https?:\/\//i.test(url);
 }
 
+function statusSlug(status) {
+  return String(status || '').replace(/\s+/g, '');
+}
+
+function statusOptionsForType(type) {
+  return STATUS_SETS[type] || STATUS_SETS.custom;
+}
+
+function defaultStatusForType(type) {
+  if (type === 'document') return '접수완료';
+  if (type === 'final') return '결과 대기';
+  return '진행 전';
+}
+
 function updateSaveStatus(state) {
   const el = document.getElementById('saveStatus');
   if (!el) return;
@@ -73,10 +106,13 @@ function rowToApp(row) {
     stages: (row.stages || []).slice().sort((a, b) => a.order_index - b.order_index).map(s => ({
       id: s.id,
       name: s.name,
+      type: s.stage_type || null,
       status: s.status,
       scheduledAt: s.scheduled_at || '',
       resultAt: s.result_at || '',
       documentCheckedAt: s.document_checked_at || '',
+      statusChangedAt: s.status_changed_at || '',
+      statusChangeSource: s.status_change_source || '',
       memo: s.memo || ''
     }))
   };
@@ -99,11 +135,14 @@ function stagesToRows(app) {
     id: s.id,
     application_id: app.id,
     name: s.name,
+    stage_type: s.type || 'custom',
     order_index: idx,
     status: s.status,
     scheduled_at: s.scheduledAt || null,
     result_at: s.resultAt || null,
     document_checked_at: s.documentCheckedAt || null,
+    status_changed_at: s.statusChangedAt || null,
+    status_change_source: s.statusChangeSource || null,
     memo: s.memo || null
   }));
 }
@@ -153,32 +192,37 @@ async function deleteStageRemote(id) {
   if (error) console.error(error);
 }
 
-/* ---------- 계산 로직 ---------- */
-
-function isDecided(stage) {
-  return stage.status === '합격' || stage.status === '불합격' || stage.status === '지원철회';
-}
+/* ---------- 상태값 계산 로직 ---------- */
 
 function computeOverallStatus(app) {
   const stages = app.stages;
-  if (stages.some(s => s.status === '지원철회')) return '지원철회';
-  if (stages.some(s => s.status === '불합격')) return '불합격';
+  if (stages.some(s => s.status === '철회')) return '종료';
+  if (stages.some(s => s.status === '탈락')) return '종료';
   const last = stages[stages.length - 1];
-  if (last && last.status === '합격') return '최종합격';
+  if (last && (last.status === '최종 합격' || last.status === '최종 탈락')) return '종료';
   return '진행중';
 }
 
-function computeCurrentStage(app) {
+function computeEndReason(app) {
   const stages = app.stages;
-  const overall = computeOverallStatus(app);
-  if (overall === '최종합격') return stages[stages.length - 1];
-  if (overall === '불합격') return stages.find(s => s.status === '불합격') || stages[stages.length - 1];
-  if (overall === '지원철회') return stages.find(s => s.status === '지원철회') || stages[stages.length - 1];
-  return stages.find(s => !isDecided(s)) || stages[stages.length - 1];
+  if (stages.some(s => s.status === '철회')) return 'withdrawn';
+  if (stages.some(s => s.status === '탈락')) return 'failed';
+  const last = stages[stages.length - 1];
+  if (last && last.status === '최종 합격') return 'finalPassed';
+  if (last && last.status === '최종 탈락') return 'failed';
+  return null;
+}
+
+function computeCurrentStage(app) {
+  for (const s of app.stages) {
+    if (s.status === '통과') continue;
+    return s;
+  }
+  return app.stages[app.stages.length - 1];
 }
 
 function nextSchedule(app) {
-  const candidates = app.stages.filter(s => (s.status === '예정' || s.status === '결과대기') && s.scheduledAt);
+  const candidates = app.stages.filter(s => PENDING_STATUSES.includes(s.status) && s.scheduledAt);
   if (!candidates.length) return null;
   candidates.sort((a, b) => a.scheduledAt.localeCompare(b.scheduledAt));
   return candidates[0];
@@ -193,8 +237,8 @@ function passRateByIndex() {
   const result = [];
   for (let i = 0; i < maxLen; i++) {
     const atIndex = applications.filter(a => a.stages[i]).map(a => a.stages[i]);
-    const decided = atIndex.filter(isDecided).filter(s => s.status !== '지원철회');
-    const passed = decided.filter(s => s.status === '합격');
+    const decided = atIndex.filter(s => DECIDED_STATUSES.includes(s.status));
+    const passed = decided.filter(s => PASSED_STATUSES.includes(s.status));
     result.push({
       label: `${i + 1}번째 전형`,
       pct: decided.length ? (passed.length / decided.length) * 100 : null,
@@ -216,6 +260,87 @@ function checkDateWarnings(app, stage) {
   return warnings;
 }
 
+/* ---------- 상태값 마이그레이션 / 자동 전환 ---------- */
+
+function inferStageType(name, idx) {
+  if (idx === 0) return 'document';
+  if (name.includes('최종')) return 'final';
+  if (name.includes('과제')) return 'assignment';
+  if (name.includes('면접')) return 'interview';
+  return 'custom';
+}
+
+function mapLegacyStatus(oldStatus, type) {
+  if (oldStatus === '예정') return type === 'document' ? '접수완료' : '진행 전';
+  if (oldStatus === '서류 확인') return '서류 확인';
+  if (oldStatus === '결과대기') return '결과 대기';
+  if (oldStatus === '합격') return type === 'final' ? '최종 합격' : '통과';
+  if (oldStatus === '불합격') return type === 'final' ? '최종 탈락' : '탈락';
+  if (oldStatus === '지원철회') return '철회';
+  return oldStatus;
+}
+
+async function migrateLegacyStageData() {
+  const rows = [];
+  applications.forEach(app => {
+    let appChanged = false;
+    app.stages.forEach((stage, idx) => {
+      if (!stage.type) {
+        const inferredType = inferStageType(stage.name, idx);
+        stage.type = inferredType;
+        stage.status = mapLegacyStatus(stage.status, inferredType);
+        stage.statusChangeSource = stage.statusChangeSource || 'manual';
+        appChanged = true;
+      }
+      if (stage.type === 'document' && stage.status === '결과 대기' && !stage.documentCheckedAt) {
+        stage.status = '접수완료';
+        stage.statusChangedAt = new Date().toISOString();
+        stage.statusChangeSource = 'automatic';
+        appChanged = true;
+      }
+    });
+    if (appChanged) rows.push(...stagesToRows(app));
+  });
+  if (!rows.length) return;
+  const { error } = await supabaseClient.from('stages').upsert(rows);
+  if (error) console.error('상태값 마이그레이션 실패', error);
+}
+
+async function runAutoStatusTransitions() {
+  const now = new Date();
+  const nowIso = now.toISOString();
+  const todayVal = todayStr();
+  const changedApps = new Set();
+
+  applications.forEach(app => {
+    app.stages.forEach(stage => {
+      if (stage.type === 'document' && stage.status === '서류 확인' && stage.documentCheckedAt) {
+        const threshold = new Date(stage.documentCheckedAt);
+        threshold.setDate(threshold.getDate() + 3);
+        if (now >= threshold) {
+          stage.status = '결과 대기';
+          stage.statusChangedAt = nowIso;
+          stage.statusChangeSource = 'automatic';
+          changedApps.add(app);
+        }
+      } else if (stage.type === 'interview' && stage.status === '진행 전' && stage.scheduledAt) {
+        if (stage.scheduledAt < todayVal) {
+          stage.status = '결과 대기';
+          stage.statusChangedAt = nowIso;
+          stage.statusChangeSource = 'automatic';
+          changedApps.add(app);
+        }
+      }
+    });
+  });
+
+  if (!changedApps.size) return;
+  const rows = [];
+  changedApps.forEach(app => rows.push(...stagesToRows(app)));
+  const { error } = await supabaseClient.from('stages').upsert(rows);
+  if (error) console.error('자동 상태 전환 저장 실패', error);
+}
+
 /* ---------- 렌더: KPI / 합격률 ---------- */
 
 function renderKpis(targetId) {
@@ -223,8 +348,8 @@ function renderKpis(targetId) {
   if (!el) return;
   const total = applications.length;
   const inProgress = applications.filter(a => computeOverallStatus(a) === '진행중').length;
-  const failed = applications.filter(a => computeOverallStatus(a) === '불합격').length;
-  const passed = applications.filter(a => computeOverallStatus(a) === '최종합격').length;
+  const failed = applications.filter(a => computeEndReason(a) === 'failed').length;
+  const passed = applications.filter(a => computeEndReason(a) === 'finalPassed').length;
   const thisMonth = todayStr().slice(0, 7);
   const monthCount = applications.filter(a => a.appliedAt && a.appliedAt.startsWith(thisMonth)).length;
 
@@ -279,14 +404,16 @@ function populateFilterOptions() {
 function applyFilters() {
   const search = document.getElementById('searchInput').value.trim().toLowerCase();
   const status = document.getElementById('statusFilter').value;
+  const stageStatus = document.getElementById('stageStatusFilter').value;
   const stage = document.getElementById('stageFilter').value;
   const position = document.getElementById('positionFilter').value;
 
   return applications.filter(a => {
     if (search && !a.companyName.toLowerCase().includes(search)) return false;
     if (status !== 'all' && computeOverallStatus(a) !== status) return false;
+    const cur = computeCurrentStage(a);
+    if (stageStatus !== 'all' && (!cur || cur.status !== stageStatus)) return false;
     if (stage !== 'all') {
-      const cur = computeCurrentStage(a);
       if (!cur || cur.name !== stage) return false;
     }
     if (position !== 'all' && a.position !== position) return false;
@@ -324,12 +451,14 @@ function renderTable() {
     const cur = computeCurrentStage(app);
     const sched = nextSchedule(app);
     const schedText = sched ? `${escapeHtml(sched.name)} · ${sched.scheduledAt}` : '-';
+    const dotClass = overall === '진행중' ? 'dot-active' : 'dot-closed';
     return `<tr data-id="${app.id}">
+      <td><span class="row-dot ${dotClass}" title="${overall}"></span></td>
       <td>${escapeHtml(app.companyName)}</td>
       <td>${escapeHtml(app.position) || '-'}</td>
       <td>${app.appliedAt}</td>
       <td>${cur ? escapeHtml(cur.name) : '-'}</td>
-      <td><span class="status-badge status-${overall}">${overall}</span></td>
+      <td>${cur ? `<span class="status-badge status-${statusSlug(cur.status)}">${cur.status}</span>` : '-'}</td>
       <td>${schedText}</td>
       <td>${hasAnyMemo(app) ? '📝' : ''}</td>
     </tr>`;
@@ -360,7 +489,7 @@ function monthlyPassCounts(n) {
   return lastNMonths(n).map(ym => ({
     label: `${Number(ym.slice(5, 7))}월`,
     count: applications.filter(a => {
-      if (computeOverallStatus(a) !== '최종합격') return false;
+      if (computeEndReason(a) !== 'finalPassed') return false;
       const last = a.stages[a.stages.length - 1];
       return last && last.resultAt && last.resultAt.startsWith(ym);
     }).length
@@ -417,7 +546,7 @@ function renderStatsView() {
   }
   const rows = positions.map(pos => {
     const apps = applications.filter(a => a.position === pos);
-    const passed = apps.filter(a => computeOverallStatus(a) === '최종합격').length;
+    const passed = apps.filter(a => computeEndReason(a) === 'finalPassed').length;
     return `<tr><td>${escapeHtml(pos)}</td><td>${apps.length}건</td><td>${passed}건</td></tr>`;
   }).join('');
   table.innerHTML = `<thead><tr><th>포지션</th><th>지원 수</th><th>최종 합격</th></tr></thead><tbody>${rows}</tbody>`;
@@ -431,12 +560,6 @@ function initCalendarState() {
   calMonth = now.getMonth();
 }
 
-function categorizeStageName(name) {
-  if (name.includes('과제')) return 'assignment';
-  if (name.includes('면접')) return 'interview';
-  return 'other';
-}
-
 function buildCalendarEvents(year, month) {
   const events = {};
   const ymPrefix = `${year}-${String(month + 1).padStart(2, '0')}`;
@@ -446,8 +569,9 @@ function buildCalendarEvents(year, month) {
       push(app.appliedAt, { type: 'apply', label: `지원 · ${app.companyName}`, appId: app.id });
     }
     app.stages.forEach(s => {
-      if (s.scheduledAt && s.scheduledAt.startsWith(ymPrefix) && (s.status === '예정' || s.status === '결과대기')) {
-        push(s.scheduledAt, { type: categorizeStageName(s.name), label: `${s.name} · ${app.companyName}`, appId: app.id });
+      if (s.scheduledAt && s.scheduledAt.startsWith(ymPrefix) && PENDING_STATUSES.includes(s.status)) {
+        const cat = s.type === 'interview' ? 'interview' : s.type === 'assignment' ? 'assignment' : 'other';
+        push(s.scheduledAt, { type: cat, label: `${s.name} · ${app.companyName}`, appId: app.id });
       }
     });
   });
@@ -534,12 +658,13 @@ function renderNotesView() {
 /* ---------- 상세 페이지 ---------- */
 
 function stageIcon(status) {
-  if (status === '합격') return { char: '✓', cls: 'status-합격' };
-  if (status === '불합격') return { char: '✕', cls: 'status-불합격' };
-  if (status === '지원철회') return { char: '⊘', cls: 'status-지원철회' };
-  if (status === '결과대기') return { char: '●', cls: 'status-결과대기' };
+  if (status === '통과' || status === '최종 합격') return { char: '✓', cls: `status-${statusSlug(status)}` };
+  if (status === '탈락' || status === '최종 탈락') return { char: '✕', cls: `status-${statusSlug(status)}` };
+  if (status === '철회') return { char: '⊘', cls: 'status-철회' };
+  if (status === '결과 대기') return { char: '●', cls: 'status-결과대기' };
   if (status === '서류 확인') return { char: '◐', cls: 'status-서류확인' };
-  return { char: '○', cls: 'status-예정' };
+  if (status === '접수완료') return { char: '○', cls: 'status-접수완료' };
+  return { char: '○', cls: 'status-진행전' };
 }
 
 function renderDetail(id) {
@@ -553,10 +678,12 @@ function renderDetail(id) {
   const overall = computeOverallStatus(app);
   const cur = computeCurrentStage(app);
   const sched = nextSchedule(app);
+  const dotClass = overall === '진행중' ? 'dot-active' : 'dot-closed';
   const chips = [
     `지원일: ${app.appliedAt}`,
+    `<span class="row-dot ${dotClass}"></span> ${overall}`,
     `현재 단계: ${cur ? escapeHtml(cur.name) : '-'}`,
-    `상태: <span class="status-badge status-${overall}">${overall}</span>`,
+    `전형 상태: ${cur ? `<span class="status-badge status-${statusSlug(cur.status)}">${cur.status}</span>` : '-'}`,
     `다음 일정: ${sched ? escapeHtml(sched.name) + ' ' + sched.scheduledAt : '-'}`
   ];
   if (app.jobPostingUrl && isSafeUrl(app.jobPostingUrl)) {
@@ -575,9 +702,8 @@ function renderTimeline(app) {
     const icon = stageIcon(s.status);
     const isLast = idx === app.stages.length - 1;
     const onlyOne = app.stages.length === 1;
-    const isDocStage = idx === 0;
-    const statusOptions = isDocStage ? DOCUMENT_STAGE_STATUSES : STAGE_STATUSES;
-    const docField = isDocStage ? `
+    const statusOptions = statusOptionsForType(s.type);
+    const docField = s.type === 'document' ? `
           <div>
             <label>서류 확인일</label>
             <input type="date" data-field="documentCheckedAt" value="${s.documentCheckedAt || ''}">
@@ -595,6 +721,12 @@ function renderTimeline(app) {
           <button type="button" class="timeline-remove" data-act="remove" ${onlyOne ? 'disabled' : ''}>🗑</button>
         </div>
         <div class="timeline-fields">
+          <div>
+            <label>유형</label>
+            <select data-field="type">
+              ${STAGE_TYPES.map(t => `<option value="${t}" ${s.type === t ? 'selected' : ''}>${STAGE_TYPE_LABELS[t]}</option>`).join('')}
+            </select>
+          </div>
           <div>
             <label>상태</label>
             <select data-field="status">
@@ -682,7 +814,10 @@ async function enterApp(session) {
   document.getElementById('authScreen').hidden = true;
   document.getElementById('appShell').hidden = false;
   await loadApplicationsFromServer();
+  await migrateLegacyStageData();
   await maybeOfferMigration();
+  await migrateLegacyStageData();
+  await runAutoStatusTransitions();
   showView('list');
 }
 
@@ -834,7 +969,7 @@ function wireEvents() {
 
   document.getElementById('backToListBtn').addEventListener('click', () => showView('list'));
 
-  ['searchInput', 'statusFilter', 'stageFilter', 'positionFilter'].forEach(id => {
+  ['searchInput', 'statusFilter', 'stageStatusFilter', 'stageFilter', 'positionFilter'].forEach(id => {
     const el = document.getElementById(id);
     el.addEventListener('input', renderTable);
     el.addEventListener('change', renderTable);
@@ -842,6 +977,7 @@ function wireEvents() {
   document.getElementById('resetFilterBtn').addEventListener('click', () => {
     document.getElementById('searchInput').value = '';
     document.getElementById('statusFilter').value = 'all';
+    document.getElementById('stageStatusFilter').value = 'all';
     document.getElementById('stageFilter').value = 'all';
     document.getElementById('positionFilter').value = 'all';
     renderTable();
@@ -868,7 +1004,10 @@ function renderStageConfigList() {
     <div class="stage-row" data-idx="${idx}">
       <button type="button" class="timeline-move" data-act="up" ${idx === 0 ? 'disabled' : ''}>↑</button>
       <button type="button" class="timeline-move" data-act="down" ${idx === draftStages.length - 1 ? 'disabled' : ''}>↓</button>
-      <input type="text" value="${escapeHtml(s.name)}" placeholder="단계명">
+      <input type="text" value="${escapeHtml(s.name)}" placeholder="단계명" data-field="name">
+      <select data-field="type">
+        ${STAGE_TYPES.map(t => `<option value="${t}" ${s.type === t ? 'selected' : ''}>${STAGE_TYPE_LABELS[t]}</option>`).join('')}
+      </select>
       <button type="button" class="timeline-remove" data-act="remove" ${draftStages.length === 1 ? 'disabled' : ''}>🗑</button>
     </div>
   `).join('');
@@ -889,7 +1028,7 @@ function wireDrawer() {
   document.getElementById('openAddDrawerBtn').addEventListener('click', () => {
     document.getElementById('addForm').reset();
     document.getElementById('addAppliedAt').value = todayStr();
-    draftStages = DEFAULT_STAGE_NAMES.map(name => ({ id: makeId(), name }));
+    draftStages = DEFAULT_STAGES.map(d => ({ id: makeId(), name: d.name, type: d.type }));
     renderStageConfigList();
     document.getElementById('stageConfigBody').hidden = true;
     document.getElementById('toggleStageConfigBtn').textContent = '전형 단계 설정 ▸';
@@ -917,7 +1056,7 @@ function wireDrawer() {
   });
 
   document.getElementById('addStageConfigBtn').addEventListener('click', () => {
-    draftStages.push({ id: makeId(), name: '' });
+    draftStages.push({ id: makeId(), name: '', type: 'custom' });
     renderStageConfigList();
   });
 
@@ -937,8 +1076,14 @@ function wireDrawer() {
 
   document.getElementById('stageConfigList').addEventListener('input', e => {
     const row = e.target.closest('.stage-row');
-    if (!row) return;
+    if (!row || e.target.dataset.field !== 'name') return;
     draftStages[Number(row.dataset.idx)].name = e.target.value;
+  });
+
+  document.getElementById('stageConfigList').addEventListener('change', e => {
+    const row = e.target.closest('.stage-row');
+    if (!row || e.target.dataset.field !== 'type') return;
+    draftStages[Number(row.dataset.idx)].type = e.target.value;
   });
 
   document.getElementById('addForm').addEventListener('submit', async e => {
@@ -956,11 +1101,16 @@ function wireDrawer() {
     }
 
     const now = new Date().toISOString();
-    const stages = draftStages.map((s, idx) => ({
-      id: s.id, name: s.name.trim() || `단계 ${idx + 1}`,
-      status: idx === 0 ? '결과대기' : '예정',
-      scheduledAt: '', resultAt: '', documentCheckedAt: '', memo: ''
-    }));
+    const stages = draftStages.map((s, idx) => {
+      const type = s.type || 'custom';
+      return {
+        id: s.id, name: s.name.trim() || `단계 ${idx + 1}`,
+        type,
+        status: defaultStatusForType(type),
+        scheduledAt: '', resultAt: '', documentCheckedAt: '', memo: '',
+        statusChangedAt: now, statusChangeSource: 'manual'
+      };
+    });
 
     const newApp = {
       id: makeId(),
@@ -1040,7 +1190,11 @@ function wireDetail() {
   document.getElementById('addStageBtn').addEventListener('click', async () => {
     const app = applications.find(a => a.id === currentDetailId);
     if (!app) return;
-    app.stages.push({ id: makeId(), name: `단계 ${app.stages.length + 1}`, status: '예정', scheduledAt: '', resultAt: '', documentCheckedAt: '', memo: '' });
+    app.stages.push({
+      id: makeId(), name: `단계 ${app.stages.length + 1}`, type: 'custom', status: '진행 전',
+      scheduledAt: '', resultAt: '', documentCheckedAt: '', memo: '',
+      statusChangedAt: new Date().toISOString(), statusChangeSource: 'manual'
+    });
     await saveApplication(app);
     renderDetail(app.id);
   });
@@ -1081,16 +1235,32 @@ function wireDetail() {
     const stage = findStage(app, item.dataset.stageId);
     if (!stage) return;
 
+    if (field === 'type') {
+      stage.type = e.target.value;
+      if (!statusOptionsForType(stage.type).includes(stage.status)) {
+        stage.status = defaultStatusForType(stage.type);
+        stage.resultAt = '';
+        stage.documentCheckedAt = '';
+      }
+      stage.statusChangedAt = new Date().toISOString();
+      stage.statusChangeSource = 'manual';
+      await saveApplication(app);
+      renderDetail(app.id);
+      return;
+    }
+
     stage[field] = e.target.value;
     if (field === 'status') {
-      if (stage.status === '합격' || stage.status === '불합격') {
+      stage.statusChangedAt = new Date().toISOString();
+      stage.statusChangeSource = 'manual';
+      if (DECIDED_STATUSES.includes(stage.status)) {
         stage.resultAt = todayStr();
       } else {
         stage.resultAt = '';
       }
       if (stage.status === '서류 확인') {
         stage.documentCheckedAt = todayStr();
-      } else if (stage.status === '예정') {
+      } else if (stage.status === '접수완료' || stage.status === '진행 전') {
         stage.documentCheckedAt = '';
       }
     }
@@ -1152,6 +1322,7 @@ function wireSettings() {
             else if (!firstError) firstError = result.message;
           }
           await loadApplicationsFromServer();
+          await migrateLegacyStageData();
           showView('list');
           if (successCount === data.length) {
             updateSaveStatus('saved');

@@ -272,13 +272,18 @@ h1, h2, h3 { margin: 0; }
 .status-badge {
   display: inline-block; font-size: 12px; font-weight: 600; padding: 4px 10px; border-radius: 999px;
 }
-.status-예정, .status-scheduled { background: var(--scheduled-bg); color: var(--scheduled); }
-.status-결과대기, .status-waiting { background: var(--waiting-bg); color: var(--waiting); }
-.status-합격, .status-최종합격, .status-passed { background: var(--pass-bg); color: var(--pass); }
-.status-불합격, .status-failed { background: var(--fail-bg); color: var(--fail); }
-.status-지원철회, .status-withdrawn { background: var(--withdrawn-bg); color: var(--withdrawn); }
+.status-접수완료 { background: var(--scheduled-bg); color: var(--scheduled); }
 .status-서류확인 { background: var(--docstage-bg); color: var(--docstage); }
+.status-진행전 { background: var(--withdrawn-bg); color: var(--withdrawn); }
+.status-결과대기 { background: var(--accent-soft); color: var(--accent); }
+.status-통과, .status-최종합격 { background: var(--pass-bg); color: var(--pass); }
+.status-탈락, .status-최종탈락 { background: var(--fail-bg); color: var(--fail); }
+.status-철회 { background: var(--withdrawn-bg); color: var(--withdrawn); }
 .status-진행중 { background: var(--scheduled-bg); color: var(--scheduled); }
+
+.row-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; }
+.row-dot.dot-active { background: var(--pass); }
+.row-dot.dot-closed { background: var(--fail); }
 
 .empty-msg { text-align: center; color: var(--text-muted); padding: 36px 0; }
 
@@ -398,6 +403,7 @@ h1, h2, h3 { margin: 0; }
 .stage-config-body { margin-top: 10px; display: flex; flex-direction: column; gap: 6px; }
 .stage-row { display: flex; align-items: center; gap: 6px; }
 .stage-row input { flex: 1; padding: 7px 8px; border: 1px solid var(--border); border-radius: 6px; }
+.stage-row select { flex: 0 0 78px; padding: 7px 6px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; }
 .drawer-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
 
 .view[hidden] { display: none; }
