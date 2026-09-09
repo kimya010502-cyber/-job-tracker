@@ -30,14 +30,14 @@ const PENDING_STATUSES = ['접수완료', '서류 확인', '진행 전', '결과
 const OLD_OLD_STATUSES = ['예정', '결과대기', '합격', '불합격', '지원철회'];
 
 const RELEASE_NOTE = {
-  version: '0.4.0',
-  updatedAt: '2026-09-09T16:49:00+09:00',
-  title: '새로워진 CatchPass를 확인해보세요',
-  description: '더 정확하고 편리하게 지원 현황을 관리할 수 있도록\n전형 관리와 통계 기능을 개선했어요.',
+  version: '0.5.0',
+  updatedAt: '2026-09-09T18:12:00+09:00',
+  title: 'CatchPass로 새단장했어요',
+  description: '지원 현황 트래커가 캐치패스라는 이름으로 새롭게 태어났어요.\n전형 관리와 통계 기능도 함께 다듬었어요.',
   items: [
+    { icon: '✨', title: 'CatchPass로 이름이 바뀌었어요', description: '더 직관적인 이름과 브랜드로 새롭게 단장했어요.' },
     { icon: '🗂️', title: '전형 카테고리가 더 명확해졌어요', description: '1차·2차 면접, 과제, 처우 협의 등 자주 사용하는 전형을 선택할 수 있어요.' },
     { icon: '🔒', title: '전형 진행 순서가 더 정확해졌어요', description: '이전 전형을 통과해야 다음 전형을 수정할 수 있도록 개선했어요.' },
-    { icon: '⏱️', title: '자동 상태 전환으로 관리가 편해졌어요', description: '서류 확인 후 또는 면접 일정이 지나면 결과 대기로 자동 전환돼요.' },
     { icon: '📊', title: '지원 통계를 더 자세히 확인할 수 있어요', description: '월별 지원 추이, 전형 통과율과 소요시간을 한눈에 확인할 수 있어요.' }
   ]
 };
