@@ -4,27 +4,43 @@ const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_
 
 const LEGACY_MIGRATED_KEY = 'jat_migrated_v2';
 
-const STAGE_TYPES = ['document', 'interview', 'assignment', 'final', 'custom'];
-const STAGE_TYPE_LABELS = { document: '서류', interview: '면접', assignment: '과제', final: '최종 결과', custom: '기타' };
+const STAGE_CATEGORIES = ['DOCUMENT', 'FIRST_INTERVIEW', 'SECOND_INTERVIEW', 'ASSIGNMENT', 'EXECUTIVE_INTERVIEW', 'COMPENSATION', 'FINAL_RESULT', 'CUSTOM'];
+const STAGE_CATEGORY_LABELS = {
+  DOCUMENT: '서류', FIRST_INTERVIEW: '1차 면접', SECOND_INTERVIEW: '2차 면접',
+  ASSIGNMENT: '과제 전형', EXECUTIVE_INTERVIEW: '임원 면접', COMPENSATION: '처우 협의',
+  FINAL_RESULT: '최종 결과', CUSTOM: '직접 입력'
+};
+const STANDARD_NAME_TO_CATEGORY = {
+  '서류': 'DOCUMENT', '1차 면접': 'FIRST_INTERVIEW', '2차 면접': 'SECOND_INTERVIEW',
+  '과제 전형': 'ASSIGNMENT', '임원 면접': 'EXECUTIVE_INTERVIEW', '처우 협의': 'COMPENSATION',
+  '최종 결과': 'FINAL_RESULT'
+};
+const DEFAULT_STAGE_CATEGORIES = ['DOCUMENT', 'FIRST_INTERVIEW', 'ASSIGNMENT', 'EXECUTIVE_INTERVIEW', 'FINAL_RESULT'];
+const PASS_RATE_CATEGORIES = ['DOCUMENT', 'FIRST_INTERVIEW', 'SECOND_INTERVIEW', 'ASSIGNMENT', 'EXECUTIVE_INTERVIEW'];
+const DURATION_CATEGORIES = ['DOCUMENT', 'FIRST_INTERVIEW', 'SECOND_INTERVIEW', 'ASSIGNMENT', 'EXECUTIVE_INTERVIEW', 'COMPENSATION'];
+
 const STATUS_SETS = {
   document: ['접수완료', '서류 확인', '결과 대기', '통과', '탈락', '철회'],
-  interview: ['진행 전', '결과 대기', '통과', '탈락', '철회'],
-  assignment: ['진행 전', '결과 대기', '통과', '탈락', '철회'],
-  final: ['결과 대기', '최종 합격', '최종 탈락', '철회'],
-  custom: ['진행 전', '결과 대기', '통과', '탈락', '철회']
+  general: ['진행 전', '결과 대기', '통과', '탈락', '철회'],
+  final: ['결과 대기', '최종 합격', '최종 탈락', '철회']
 };
-const DEFAULT_STAGES = [
-  { name: '서류', type: 'document' },
-  { name: '1차 면접', type: 'interview' },
-  { name: '과제 전형', type: 'assignment' },
-  { name: '임원 면접', type: 'interview' },
-  { name: '최종 결과', type: 'final' }
-];
-const TERMINAL_STATUSES = ['탈락', '철회', '최종 합격', '최종 탈락'];
 const DECIDED_STATUSES = ['통과', '탈락', '최종 합격', '최종 탈락'];
 const PASSED_STATUSES = ['통과', '최종 합격'];
 const PENDING_STATUSES = ['접수완료', '서류 확인', '진행 전', '결과 대기'];
-const STAGE_STATUS_FILTER_OPTIONS = ['접수완료', '서류 확인', '진행 전', '결과 대기', '통과', '탈락', '철회', '최종 합격', '최종 탈락'];
+const OLD_OLD_STATUSES = ['예정', '결과대기', '합격', '불합격', '지원철회'];
+
+const RELEASE_NOTE = {
+  version: '0.4.0',
+  updatedAt: '2026-09-09T16:49:00+09:00',
+  title: '새로워진 CatchPass를 확인해보세요',
+  description: '더 정확하고 편리하게 지원 현황을 관리할 수 있도록\n전형 관리와 통계 기능을 개선했어요.',
+  items: [
+    { icon: '🗂️', title: '전형 카테고리가 더 명확해졌어요', description: '1차·2차 면접, 과제, 처우 협의 등 자주 사용하는 전형을 선택할 수 있어요.' },
+    { icon: '🔒', title: '전형 진행 순서가 더 정확해졌어요', description: '이전 전형을 통과해야 다음 전형을 수정할 수 있도록 개선했어요.' },
+    { icon: '⏱️', title: '자동 상태 전환으로 관리가 편해졌어요', description: '서류 확인 후 또는 면접 일정이 지나면 결과 대기로 자동 전환돼요.' },
+    { icon: '📊', title: '지원 통계를 더 자세히 확인할 수 있어요', description: '월별 지원 추이, 전형 통과율과 소요시간을 한눈에 확인할 수 있어요.' }
+  ]
+};
 
 let currentUserId = null;
 let currentUserEmail = '';
@@ -72,14 +88,22 @@ function statusSlug(status) {
   return String(status || '').replace(/\s+/g, '');
 }
 
-function statusOptionsForType(type) {
-  return STATUS_SETS[type] || STATUS_SETS.custom;
+function statusGroupForCategory(category) {
+  if (category === 'DOCUMENT') return 'document';
+  if (category === 'FINAL_RESULT') return 'final';
+  return 'general';
 }
-
-function defaultStatusForType(type) {
-  if (type === 'document') return '접수완료';
-  if (type === 'final') return '결과 대기';
+function statusOptionsForCategory(category) {
+  return STATUS_SETS[statusGroupForCategory(category)];
+}
+function defaultStatusForCategory(category) {
+  const group = statusGroupForCategory(category);
+  if (group === 'document') return '접수완료';
+  if (group === 'final') return '결과 대기';
   return '진행 전';
+}
+function isInterviewCategory(category) {
+  return category === 'FIRST_INTERVIEW' || category === 'SECOND_INTERVIEW' || category === 'EXECUTIVE_INTERVIEW';
 }
 
 function updateSaveStatus(state) {
@@ -106,7 +130,7 @@ function rowToApp(row) {
     stages: (row.stages || []).slice().sort((a, b) => a.order_index - b.order_index).map(s => ({
       id: s.id,
       name: s.name,
-      type: s.stage_type || null,
+      category: s.stage_type || null,
       status: s.status,
       scheduledAt: s.scheduled_at || '',
       resultAt: s.result_at || '',
@@ -135,7 +159,7 @@ function stagesToRows(app) {
     id: s.id,
     application_id: app.id,
     name: s.name,
-    stage_type: s.type || 'custom',
+    stage_type: s.category || 'CUSTOM',
     order_index: idx,
     status: s.status,
     scheduled_at: s.scheduledAt || null,
@@ -221,6 +245,17 @@ function computeCurrentStage(app) {
   return app.stages[app.stages.length - 1];
 }
 
+function computeFailureDate(app) {
+  const failStage = app.stages.find(s => s.status === '탈락' || s.status === '최종 탈락');
+  return failStage ? failStage.resultAt : null;
+}
+
+function isStageUnlocked(app, idx) {
+  if (idx === 0) return true;
+  const prev = app.stages[idx - 1];
+  return !!prev && prev.status === '통과';
+}
+
 function nextSchedule(app) {
   const candidates = app.stages.filter(s => PENDING_STATUSES.includes(s.status) && s.scheduledAt);
   if (!candidates.length) return null;
@@ -232,21 +267,53 @@ function hasAnyMemo(app) {
   return !!(app.companyMemo && app.companyMemo.trim()) || app.stages.some(s => s.memo && s.memo.trim());
 }
 
-function passRateByIndex() {
-  const maxLen = Math.min(6, applications.reduce((m, a) => Math.max(m, a.stages.length), 0));
-  const result = [];
-  for (let i = 0; i < maxLen; i++) {
-    const atIndex = applications.filter(a => a.stages[i]).map(a => a.stages[i]);
-    const decided = atIndex.filter(s => DECIDED_STATUSES.includes(s.status));
-    const passed = decided.filter(s => PASSED_STATUSES.includes(s.status));
-    result.push({
-      label: `${i + 1}번째 전형`,
+function passRateByCategory() {
+  return PASS_RATE_CATEGORIES.map(cat => {
+    const stages = [];
+    applications.forEach(a => a.stages.forEach(s => { if (s.category === cat) stages.push(s); }));
+    const decided = stages.filter(s => s.status === '통과' || s.status === '탈락');
+    const passed = decided.filter(s => s.status === '통과');
+    return {
+      label: STAGE_CATEGORY_LABELS[cat],
       pct: decided.length ? (passed.length / decided.length) * 100 : null,
       passed: passed.length,
       decided: decided.length
+    };
+  });
+}
+
+function finalPassRate() {
+  const stages = [];
+  applications.forEach(a => a.stages.forEach(s => { if (s.category === 'FINAL_RESULT') stages.push(s); }));
+  const decided = stages.filter(s => s.status === '최종 합격' || s.status === '최종 탈락');
+  const passed = decided.filter(s => s.status === '최종 합격');
+  return {
+    label: '최종 합격률',
+    pct: decided.length ? (passed.length / decided.length) * 100 : null,
+    passed: passed.length,
+    decided: decided.length
+  };
+}
+
+function avgDurationByCategory() {
+  return DURATION_CATEGORIES.map(cat => {
+    const durations = [];
+    applications.forEach(a => {
+      a.stages.forEach(s => {
+        if (s.category !== cat) return;
+        const startStr = cat === 'DOCUMENT' ? a.appliedAt : s.scheduledAt;
+        const endStr = s.resultAt;
+        if (!startStr || !endStr) return;
+        const days = Math.round((new Date(endStr) - new Date(startStr)) / 86400000);
+        if (days >= 0) durations.push(days);
+      });
     });
-  }
-  return result;
+    return {
+      label: STAGE_CATEGORY_LABELS[cat],
+      avg: durations.length ? durations.reduce((a, b) => a + b, 0) / durations.length : null,
+      count: durations.length
+    };
+  });
 }
 
 function checkDateWarnings(app, stage) {
@@ -262,20 +329,17 @@ function checkDateWarnings(app, stage) {
 
 /* ---------- 상태값 마이그레이션 / 자동 전환 ---------- */
 
-function inferStageType(name, idx) {
-  if (idx === 0) return 'document';
-  if (name.includes('최종')) return 'final';
-  if (name.includes('과제')) return 'assignment';
-  if (name.includes('면접')) return 'interview';
-  return 'custom';
+function inferStageCategory(name) {
+  return STANDARD_NAME_TO_CATEGORY[String(name || '').trim()] || 'CUSTOM';
 }
 
-function mapLegacyStatus(oldStatus, type) {
-  if (oldStatus === '예정') return type === 'document' ? '접수완료' : '진행 전';
-  if (oldStatus === '서류 확인') return '서류 확인';
+function migrateStatusForCategory(oldStatus, category) {
+  if (!OLD_OLD_STATUSES.includes(oldStatus)) return oldStatus;
+  const group = statusGroupForCategory(category);
+  if (oldStatus === '예정') return group === 'document' ? '접수완료' : '진행 전';
   if (oldStatus === '결과대기') return '결과 대기';
-  if (oldStatus === '합격') return type === 'final' ? '최종 합격' : '통과';
-  if (oldStatus === '불합격') return type === 'final' ? '최종 탈락' : '탈락';
+  if (oldStatus === '합격') return group === 'final' ? '최종 합격' : '통과';
+  if (oldStatus === '불합격') return group === 'final' ? '최종 탈락' : '탈락';
   if (oldStatus === '지원철회') return '철회';
   return oldStatus;
 }
@@ -284,15 +348,15 @@ async function migrateLegacyStageData() {
   const rows = [];
   applications.forEach(app => {
     let appChanged = false;
-    app.stages.forEach((stage, idx) => {
-      if (!stage.type) {
-        const inferredType = inferStageType(stage.name, idx);
-        stage.type = inferredType;
-        stage.status = mapLegacyStatus(stage.status, inferredType);
+    app.stages.forEach(stage => {
+      if (!STAGE_CATEGORIES.includes(stage.category)) {
+        const category = inferStageCategory(stage.name);
+        stage.status = migrateStatusForCategory(stage.status, category);
+        stage.category = category;
         stage.statusChangeSource = stage.statusChangeSource || 'manual';
         appChanged = true;
       }
-      if (stage.type === 'document' && stage.status === '결과 대기' && !stage.documentCheckedAt) {
+      if (statusGroupForCategory(stage.category) === 'document' && stage.status === '결과 대기' && !stage.documentCheckedAt) {
         stage.status = '접수완료';
         stage.statusChangedAt = new Date().toISOString();
         stage.statusChangeSource = 'automatic';
@@ -313,8 +377,9 @@ async function runAutoStatusTransitions() {
   const changedApps = new Set();
 
   applications.forEach(app => {
-    app.stages.forEach(stage => {
-      if (stage.type === 'document' && stage.status === '서류 확인' && stage.documentCheckedAt) {
+    app.stages.forEach((stage, idx) => {
+      if (!isStageUnlocked(app, idx)) return;
+      if (statusGroupForCategory(stage.category) === 'document' && stage.status === '서류 확인' && stage.documentCheckedAt) {
         const threshold = new Date(stage.documentCheckedAt);
         threshold.setDate(threshold.getDate() + 3);
         if (now >= threshold) {
@@ -323,7 +388,7 @@ async function runAutoStatusTransitions() {
           stage.statusChangeSource = 'automatic';
           changedApps.add(app);
         }
-      } else if (stage.type === 'interview' && stage.status === '진행 전' && stage.scheduledAt) {
+      } else if (isInterviewCategory(stage.category) && stage.status === '진행 전' && stage.scheduledAt) {
         if (stage.scheduledAt < todayVal) {
           stage.status = '결과 대기';
           stage.statusChangedAt = nowIso;
@@ -343,42 +408,85 @@ async function runAutoStatusTransitions() {
 
 /* ---------- 렌더: KPI / 합격률 ---------- */
 
-function renderKpis(targetId) {
-  const el = document.getElementById(targetId);
+function renderMainKpis() {
+  const el = document.getElementById('kpiGrid');
   if (!el) return;
-  const total = applications.length;
-  const inProgress = applications.filter(a => computeOverallStatus(a) === '진행중').length;
-  const failed = applications.filter(a => computeEndReason(a) === 'failed').length;
-  const passed = applications.filter(a => computeEndReason(a) === 'finalPassed').length;
   const thisMonth = todayStr().slice(0, 7);
-  const monthCount = applications.filter(a => a.appliedAt && a.appliedAt.startsWith(thisMonth)).length;
+  const monthApplied = applications.filter(a => a.appliedAt && a.appliedAt.startsWith(thisMonth)).length;
+  const inProgress = applications.filter(a => computeOverallStatus(a) === '진행중').length;
+  const monthFailed = applications.filter(a => {
+    if (computeEndReason(a) !== 'failed') return false;
+    const d = computeFailureDate(a);
+    return d && d.startsWith(thisMonth);
+  }).length;
+  const finalPassed = applications.filter(a => computeEndReason(a) === 'finalPassed').length;
 
   const cards = [
-    ['총 지원', total], ['진행 중', inProgress], ['불합격', failed], ['최종 합격', passed], ['이번 달 지원', monthCount]
+    ['이번 달 지원', monthApplied], ['진행 중', inProgress], ['이번 달 불합격', monthFailed], ['최종 합격', finalPassed]
   ];
   el.innerHTML = cards.map(([label, value]) =>
     `<div class="kpi-card"><div class="kpi-value">${value}</div><div class="kpi-label">${label}</div></div>`
   ).join('');
 }
 
-function renderRateCards(targetId) {
+function renderOverallStatsKpis() {
+  const el = document.getElementById('statsKpiGrid');
+  if (!el) return;
+  const total = applications.length;
+  const inProgress = applications.filter(a => computeOverallStatus(a) === '진행중').length;
+  const failed = applications.filter(a => computeEndReason(a) === 'failed').length;
+  const finalPassed = applications.filter(a => computeEndReason(a) === 'finalPassed').length;
+
+  const cards = [
+    ['총 지원', total], ['진행 중', inProgress], ['누적 탈락', failed], ['최종 합격', finalPassed]
+  ];
+  el.innerHTML = cards.map(([label, value]) =>
+    `<div class="kpi-card"><div class="kpi-value">${value}</div><div class="kpi-label">${label}</div></div>`
+  ).join('');
+}
+
+function renderRateCards(targetId, rates) {
   const el = document.getElementById(targetId);
   if (!el) return;
-  const rates = passRateByIndex();
   if (!rates.length) {
     el.innerHTML = '<p class="empty-msg" style="grid-column:1/-1;padding:16px;">아직 결과 데이터가 없습니다.</p>';
     return;
   }
   el.innerHTML = rates.map(r => `
-    <div class="rate-card">
-      <div class="rate-top">
-        <span class="rate-title">${r.label} 합격률</span>
-        <span class="rate-pct">${r.pct === null ? '-' : r.pct.toFixed(1) + '%'}</span>
-      </div>
+    <div class="rate-card rate-card-vertical">
+      <span class="rate-title">${r.label} 통과율</span>
+      <span class="rate-pct">${r.pct === null ? '-' : r.pct.toFixed(1) + '%'}</span>
       <div class="progress-bar"><div class="progress-fill" style="width:${r.pct === null ? 0 : r.pct}%"></div></div>
-      <div class="rate-frac" style="margin-top:6px;">${r.passed} / ${r.decided}</div>
+      <span class="rate-frac">${r.decided === 0 ? '데이터 없음' : `${r.passed} / ${r.decided}`}</span>
     </div>
   `).join('');
+}
+
+function renderDurationCards(targetId) {
+  const el = document.getElementById(targetId);
+  if (!el) return;
+  const data = avgDurationByCategory();
+  el.innerHTML = data.map(d => {
+    let pctText = '-';
+    let subText = '데이터 없음';
+    let fillPct = 0;
+    if (d.count === 1) {
+      pctText = `${Math.round(d.avg)}일`;
+      subText = '데이터 1건';
+      fillPct = 100;
+    } else if (d.count >= 2) {
+      pctText = `평균 ${d.avg.toFixed(1)}일`;
+      subText = `데이터 ${d.count}건`;
+      fillPct = 100;
+    }
+    return `
+    <div class="rate-card rate-card-vertical">
+      <span class="rate-title">${d.label} 소요시간</span>
+      <span class="rate-pct">${pctText}</span>
+      <div class="progress-bar"><div class="progress-fill" style="width:${fillPct}%"></div></div>
+      <span class="rate-frac">${subText}</span>
+    </div>`;
+  }).join('');
 }
 
 /* ---------- 렌더: 지원 내역 목록 ---------- */
@@ -425,8 +533,7 @@ function applyFilters() {
 }
 
 function renderTable() {
-  renderKpis('kpiGrid');
-  renderRateCards('rateGrid');
+  renderMainKpis();
   populateFilterOptions();
   const tbody = document.getElementById('appTableBody');
   const emptyMsg = document.getElementById('emptyMsg');
@@ -485,58 +592,96 @@ function monthlyApplyCounts(n) {
   }));
 }
 
-function monthlyPassCounts(n) {
-  return lastNMonths(n).map(ym => ({
-    label: `${Number(ym.slice(5, 7))}월`,
-    count: applications.filter(a => {
-      if (computeEndReason(a) !== 'finalPassed') return false;
-      const last = a.stages[a.stages.length - 1];
-      return last && last.resultAt && last.resultAt.startsWith(ym);
-    }).length
-  }));
+function periodOverPeriodStats() {
+  const now = new Date();
+  const day = now.getDate();
+  const pad = n => String(n).padStart(2, '0');
+  const thisStart = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-01`;
+  const thisEnd = todayStr();
+
+  const prevMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  const prevStart = `${prevMonthDate.getFullYear()}-${pad(prevMonthDate.getMonth() + 1)}-01`;
+  const lastDayOfPrevMonth = new Date(prevMonthDate.getFullYear(), prevMonthDate.getMonth() + 1, 0).getDate();
+  const prevEndDay = Math.min(day, lastDayOfPrevMonth);
+  const prevEnd = `${prevMonthDate.getFullYear()}-${pad(prevMonthDate.getMonth() + 1)}-${pad(prevEndDay)}`;
+
+  const curCount = applications.filter(a => a.appliedAt >= thisStart && a.appliedAt <= thisEnd).length;
+  const prevCount = applications.filter(a => a.appliedAt >= prevStart && a.appliedAt <= prevEnd).length;
+  return { curCount, prevCount, diff: curCount - prevCount, day };
 }
 
-function deltaText(data, unit) {
-  if (data.length < 2) return '';
-  const prev = data[data.length - 2].count;
-  const cur = data[data.length - 1].count;
-  const diff = cur - prev;
-  const sign = diff > 0 ? '+' : '';
-  if (prev === 0) {
-    return diff === 0 ? `이번 달 <strong>${cur}${unit}</strong>` : `이번 달 <strong>${cur}${unit}</strong> (전월 데이터 없음)`;
+function renderTrendSummary(totalRecent3) {
+  const { prevCount, curCount, diff } = periodOverPeriodStats();
+  let pct, arrow, cls;
+  if (prevCount === 0) {
+    if (curCount === 0) { pct = 0; arrow = '－'; cls = ''; }
+    else { pct = 100; arrow = '▲'; cls = 'up'; }
+  } else {
+    pct = Math.abs(Math.round((diff / prevCount) * 100));
+    arrow = diff > 0 ? '▲' : diff < 0 ? '▼' : '－';
+    cls = diff > 0 ? 'up' : diff < 0 ? 'down' : '';
   }
-  const pct = Math.round((diff / prev) * 100);
-  return `이번 달 <strong>${cur}${unit}</strong> · 전월 대비 ${sign}${diff}${unit} (${sign}${pct}%)`;
+  document.getElementById('applyTrendSummary').innerHTML = `
+    <div class="trend-summary-row">
+      <div class="trend-summary-block">
+        <span class="trend-summary-label">최근 3개월 총 지원</span>
+        <span class="trend-summary-value">${totalRecent3}건</span>
+      </div>
+      <div class="trend-summary-block align-right">
+        <span class="trend-summary-label">전월 동기간 대비</span>
+        <span class="trend-summary-value ${cls}">${arrow} ${pct}%</span>
+      </div>
+    </div>
+  `;
 }
 
-function renderBarChart(targetId, data, color) {
+function renderLineChart(targetId, data, color) {
   const el = document.getElementById(targetId);
   const max = Math.max(1, ...data.map(d => d.count));
-  const w = 600, h = 160, padBottom = 26, padTop = 20, gap = 12;
-  const barW = (w - gap * (data.length + 1)) / data.length;
-  const bars = data.map((d, i) => {
-    const barH = Math.max((d.count / max) * (h - padTop - padBottom), d.count > 0 ? 3 : 0);
-    const x = gap + i * (barW + gap);
-    const y = h - padBottom - barH;
-    const isLast = i === data.length - 1;
-    return `<rect x="${x}" y="${y}" width="${barW}" height="${barH}" rx="4" fill="${isLast ? color : color + '55'}"></rect>
-      <text x="${x + barW / 2}" y="${y - 6}" text-anchor="middle" font-size="11" fill="#6b7086">${d.count}</text>
-      <text x="${x + barW / 2}" y="${h - 8}" text-anchor="middle" font-size="11" fill="#6b7086">${d.label}</text>`;
+  const w = 560, h = 180, padBottom = 30, padTop = 24, padX = 40;
+  const chartTop = padTop, chartBottom = h - padBottom;
+  const stepX = data.length > 1 ? (w - padX * 2) / (data.length - 1) : 0;
+  const points = data.map((d, i) => ({
+    x: padX + i * stepX,
+    y: chartBottom - (d.count / max) * (chartBottom - chartTop),
+    d
+  }));
+  const linePath = points.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x},${p.y}`).join(' ');
+  const areaPath = `${linePath} L${points[points.length - 1].x},${chartBottom} L${points[0].x},${chartBottom} Z`;
+  const gridLines = [0, 0.5, 1].map(t => {
+    const y = chartBottom - t * (chartBottom - chartTop);
+    return `<line x1="${padX}" y1="${y}" x2="${w - padX}" y2="${y}" stroke="#e4e6ef" stroke-width="1" stroke-dasharray="3,4"></line>`;
   }).join('');
-  el.innerHTML = `<svg viewBox="0 0 ${w} ${h}" style="width:100%;height:140px;">${bars}</svg>`;
+  const dots = points.map(p => `
+    <circle cx="${p.x}" cy="${p.y}" r="5" fill="${color}" stroke="#fff" stroke-width="2"></circle>
+    <text x="${p.x}" y="${p.y - 14}" text-anchor="middle" font-size="12" font-weight="700" fill="#232544">${p.d.count}</text>
+    <text x="${p.x}" y="${h - 8}" text-anchor="middle" font-size="11" fill="#6b7086">${p.d.label}</text>
+  `).join('');
+  const gradId = `lineGrad-${targetId}`;
+  el.innerHTML = `<svg viewBox="0 0 ${w} ${h}" style="width:100%;height:150px;">
+    <defs>
+      <linearGradient id="${gradId}" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="${color}" stop-opacity="0.22"></stop>
+        <stop offset="100%" stop-color="${color}" stop-opacity="0"></stop>
+      </linearGradient>
+    </defs>
+    ${gridLines}
+    <path d="${areaPath}" fill="url(#${gradId})" stroke="none"></path>
+    <path d="${linePath}" fill="none" stroke="${color}" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"></path>
+    ${dots}
+  </svg>`;
 }
 
 function renderStatsView() {
-  renderKpis('statsKpiGrid');
-  renderRateCards('statsRateGrid');
+  renderOverallStatsKpis();
 
-  const applyData = monthlyApplyCounts(6);
-  renderBarChart('applyTrendChart', applyData, '#5b5fc7');
-  document.getElementById('applyTrendDelta').innerHTML = deltaText(applyData, '건');
+  const applyData = monthlyApplyCounts(3);
+  renderLineChart('applyTrendChart', applyData, '#5b5fc7');
+  const totalRecent3 = applyData.reduce((s, d) => s + d.count, 0);
+  renderTrendSummary(totalRecent3);
 
-  const passData = monthlyPassCounts(6);
-  renderBarChart('passTrendChart', passData, '#1a9e5c');
-  document.getElementById('passTrendDelta').innerHTML = deltaText(passData, '건');
+  renderRateCards('statsRateGrid', [...passRateByCategory(), finalPassRate()]);
+  renderDurationCards('durationGrid');
 
   const positions = [...new Set(applications.map(a => a.position).filter(Boolean))];
   const table = document.getElementById('positionStatsTable');
@@ -546,10 +691,16 @@ function renderStatsView() {
   }
   const rows = positions.map(pos => {
     const apps = applications.filter(a => a.position === pos);
-    const passed = apps.filter(a => computeEndReason(a) === 'finalPassed').length;
-    return `<tr><td>${escapeHtml(pos)}</td><td>${apps.length}건</td><td>${passed}건</td></tr>`;
-  }).join('');
-  table.innerHTML = `<thead><tr><th>포지션</th><th>지원 수</th><th>최종 합격</th></tr></thead><tbody>${rows}</tbody>`;
+    const docStages = [];
+    apps.forEach(a => a.stages.forEach(s => { if (s.category === 'DOCUMENT') docStages.push(s); }));
+    const decided = docStages.filter(s => s.status === '통과' || s.status === '탈락');
+    const passed = decided.filter(s => s.status === '통과');
+    const rate = decided.length ? ((passed.length / decided.length) * 100).toFixed(1) + '%' : '-';
+    return { pos, count: apps.length, rate };
+  }).sort((a, b) => b.count - a.count);
+  table.innerHTML = `<thead><tr><th>포지션</th><th>지원 수</th><th>서류 통과율</th></tr></thead><tbody>${
+    rows.map(r => `<tr><td>${escapeHtml(r.pos)}</td><td>${r.count}건</td><td>${r.rate}</td></tr>`).join('')
+  }</tbody>`;
 }
 
 let calYear, calMonth;
@@ -570,7 +721,7 @@ function buildCalendarEvents(year, month) {
     }
     app.stages.forEach(s => {
       if (s.scheduledAt && s.scheduledAt.startsWith(ymPrefix) && PENDING_STATUSES.includes(s.status)) {
-        const cat = s.type === 'interview' ? 'interview' : s.type === 'assignment' ? 'assignment' : 'other';
+        const cat = isInterviewCategory(s.category) ? 'interview' : s.category === 'ASSIGNMENT' ? 'assignment' : 'other';
         push(s.scheduledAt, { type: cat, label: `${s.name} · ${app.companyName}`, appId: app.id });
       }
     });
@@ -702,13 +853,16 @@ function renderTimeline(app) {
     const icon = stageIcon(s.status);
     const isLast = idx === app.stages.length - 1;
     const onlyOne = app.stages.length === 1;
-    const statusOptions = statusOptionsForType(s.type);
-    const docField = s.type === 'document' ? `
+    const unlocked = isStageUnlocked(app, idx);
+    const isCustom = s.category === 'CUSTOM';
+    const statusOptions = statusOptionsForCategory(s.category);
+    const dis = unlocked ? '' : 'disabled';
+    const docField = statusGroupForCategory(s.category) === 'document' ? `
           <div>
             <label>서류 확인일</label>
-            <input type="date" data-field="documentCheckedAt" value="${s.documentCheckedAt || ''}">
+            <input type="date" data-field="documentCheckedAt" value="${s.documentCheckedAt || ''}" ${dis}>
           </div>` : '';
-    return `<div class="timeline-item" data-stage-id="${s.id}">
+    return `<div class="timeline-item ${unlocked ? '' : 'locked'}" data-stage-id="${s.id}">
       <div class="timeline-track">
         <div class="timeline-icon ${icon.cls}">${icon.char}</div>
         ${isLast ? '' : '<div class="timeline-line"></div>'}
@@ -717,32 +871,30 @@ function renderTimeline(app) {
         <div class="timeline-card-top">
           <button type="button" class="timeline-move" data-act="up" ${idx === 0 ? 'disabled' : ''}>↑</button>
           <button type="button" class="timeline-move" data-act="down" ${isLast ? 'disabled' : ''}>↓</button>
-          <input type="text" class="timeline-name-input" data-field="name" value="${escapeHtml(s.name)}">
+          <select class="timeline-category-select" data-field="category" ${dis}>
+            ${STAGE_CATEGORIES.map(c => `<option value="${c}" ${s.category === c ? 'selected' : ''}>${STAGE_CATEGORY_LABELS[c]}</option>`).join('')}
+          </select>
+          <input type="text" class="timeline-name-input" data-field="name" value="${escapeHtml(s.name)}" placeholder="전형명" ${isCustom ? '' : 'hidden'} ${dis}>
           <button type="button" class="timeline-remove" data-act="remove" ${onlyOne ? 'disabled' : ''}>🗑</button>
         </div>
+        ${unlocked ? '' : '<p class="lock-hint">🔒 이전 전형을 통과하면 입력할 수 있습니다.</p>'}
         <div class="timeline-fields">
           <div>
-            <label>유형</label>
-            <select data-field="type">
-              ${STAGE_TYPES.map(t => `<option value="${t}" ${s.type === t ? 'selected' : ''}>${STAGE_TYPE_LABELS[t]}</option>`).join('')}
-            </select>
-          </div>
-          <div>
             <label>상태</label>
-            <select data-field="status">
+            <select data-field="status" ${dis}>
               ${statusOptions.map(st => `<option value="${st}" ${s.status === st ? 'selected' : ''}>${st}</option>`).join('')}
             </select>
           </div>
           <div>
             <label>전형 진행일</label>
-            <input type="date" data-field="scheduledAt" value="${s.scheduledAt || ''}">
+            <input type="date" data-field="scheduledAt" value="${s.scheduledAt || ''}" ${dis}>
           </div>
           <div>
             <label>결과일</label>
-            <input type="date" data-field="resultAt" value="${s.resultAt || ''}">
+            <input type="date" data-field="resultAt" value="${s.resultAt || ''}" ${dis}>
           </div>${docField}
         </div>
-        <textarea class="timeline-memo" data-field="memo" rows="2" placeholder="전형별 메모">${escapeHtml(s.memo || '')}</textarea>
+        <textarea class="timeline-memo" data-field="memo" rows="2" placeholder="전형별 메모" ${dis}>${escapeHtml(s.memo || '')}</textarea>
       </div>
     </div>`;
   }).join('');
@@ -754,7 +906,7 @@ function findStage(app, stageId) {
 
 /* ---------- 라우팅 ---------- */
 
-function showView(name) {
+async function showView(name) {
   document.querySelectorAll('.view').forEach(v => v.hidden = true);
   const target = document.getElementById(`view-${name}`);
   if (target) target.hidden = false;
@@ -762,7 +914,7 @@ function showView(name) {
     btn.classList.toggle('active', btn.dataset.view === name);
   });
   if (name === 'list') renderTable();
-  if (name === 'stats') renderStatsView();
+  if (name === 'stats') { await loadApplicationsFromServer(); renderStatsView(); }
   if (name === 'calendar') renderCalendarView();
   if (name === 'notes') renderNotesView();
 }
@@ -819,6 +971,7 @@ async function enterApp(session) {
   await migrateLegacyStageData();
   await runAutoStatusTransitions();
   showView('list');
+  maybeShowReleaseModal(session);
 }
 
 function collectLegacyApplications() {
@@ -994,6 +1147,54 @@ function wireEvents() {
   wireDetail();
   wireSettings();
   wireCalendar();
+  wireReleaseModal();
+}
+
+/* ---------- 업데이트 공지 모달 ---------- */
+
+function formatReleaseDate(iso) {
+  const d = new Date(iso);
+  const pad = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}년 ${d.getMonth() + 1}월 ${d.getDate()}일 ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function renderReleaseModal() {
+  document.getElementById('releaseTitle').textContent = RELEASE_NOTE.title;
+  document.getElementById('releaseDesc').innerHTML = escapeHtml(RELEASE_NOTE.description).replace(/\n/g, '<br>');
+  document.getElementById('releaseVersion').textContent = 'v' + RELEASE_NOTE.version;
+  document.getElementById('releaseUpdatedAt').textContent = formatReleaseDate(RELEASE_NOTE.updatedAt);
+  document.getElementById('releaseItems').innerHTML = RELEASE_NOTE.items.map(it => `
+    <div class="release-item">
+      <div class="release-item-icon">${it.icon}</div>
+      <div>
+        <div class="release-item-title">${escapeHtml(it.title)}</div>
+        <div class="release-item-desc">${escapeHtml(it.description)}</div>
+      </div>
+    </div>
+  `).join('');
+}
+
+function maybeShowReleaseModal(session) {
+  const hidden = session.user.user_metadata && session.user.user_metadata.hidden_update_version;
+  if (hidden === RELEASE_NOTE.version) return;
+  renderReleaseModal();
+  document.getElementById('releaseModalOverlay').hidden = false;
+}
+
+function closeReleaseModal() {
+  document.getElementById('releaseModalOverlay').hidden = true;
+}
+
+function wireReleaseModal() {
+  document.getElementById('releaseConfirmBtn').addEventListener('click', closeReleaseModal);
+  document.getElementById('releaseNeverBtn').addEventListener('click', async () => {
+    const { error } = await supabaseClient.auth.updateUser({ data: { hidden_update_version: RELEASE_NOTE.version } });
+    if (error) console.error('공지 숨김 저장 실패', error);
+    closeReleaseModal();
+  });
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && !document.getElementById('releaseModalOverlay').hidden) closeReleaseModal();
+  });
 }
 
 /* ---------- 기록 추가 Drawer ---------- */
@@ -1004,10 +1205,10 @@ function renderStageConfigList() {
     <div class="stage-row" data-idx="${idx}">
       <button type="button" class="timeline-move" data-act="up" ${idx === 0 ? 'disabled' : ''}>↑</button>
       <button type="button" class="timeline-move" data-act="down" ${idx === draftStages.length - 1 ? 'disabled' : ''}>↓</button>
-      <input type="text" value="${escapeHtml(s.name)}" placeholder="단계명" data-field="name">
-      <select data-field="type">
-        ${STAGE_TYPES.map(t => `<option value="${t}" ${s.type === t ? 'selected' : ''}>${STAGE_TYPE_LABELS[t]}</option>`).join('')}
+      <select data-field="category">
+        ${STAGE_CATEGORIES.map(c => `<option value="${c}" ${s.category === c ? 'selected' : ''}>${STAGE_CATEGORY_LABELS[c]}</option>`).join('')}
       </select>
+      <input type="text" value="${escapeHtml(s.name)}" placeholder="전형명" data-field="name" ${s.category === 'CUSTOM' ? '' : 'hidden'}>
       <button type="button" class="timeline-remove" data-act="remove" ${draftStages.length === 1 ? 'disabled' : ''}>🗑</button>
     </div>
   `).join('');
@@ -1028,7 +1229,7 @@ function wireDrawer() {
   document.getElementById('openAddDrawerBtn').addEventListener('click', () => {
     document.getElementById('addForm').reset();
     document.getElementById('addAppliedAt').value = todayStr();
-    draftStages = DEFAULT_STAGES.map(d => ({ id: makeId(), name: d.name, type: d.type }));
+    draftStages = DEFAULT_STAGE_CATEGORIES.map(cat => ({ id: makeId(), name: STAGE_CATEGORY_LABELS[cat], category: cat }));
     renderStageConfigList();
     document.getElementById('stageConfigBody').hidden = true;
     document.getElementById('toggleStageConfigBtn').textContent = '전형 단계 설정 ▸';
@@ -1056,7 +1257,7 @@ function wireDrawer() {
   });
 
   document.getElementById('addStageConfigBtn').addEventListener('click', () => {
-    draftStages.push({ id: makeId(), name: '', type: 'custom' });
+    draftStages.push({ id: makeId(), name: '', category: 'CUSTOM' });
     renderStageConfigList();
   });
 
@@ -1082,8 +1283,11 @@ function wireDrawer() {
 
   document.getElementById('stageConfigList').addEventListener('change', e => {
     const row = e.target.closest('.stage-row');
-    if (!row || e.target.dataset.field !== 'type') return;
-    draftStages[Number(row.dataset.idx)].type = e.target.value;
+    if (!row || e.target.dataset.field !== 'category') return;
+    const idx = Number(row.dataset.idx);
+    draftStages[idx].category = e.target.value;
+    draftStages[idx].name = e.target.value === 'CUSTOM' ? '' : STAGE_CATEGORY_LABELS[e.target.value];
+    renderStageConfigList();
   });
 
   document.getElementById('addForm').addEventListener('submit', async e => {
@@ -1102,11 +1306,11 @@ function wireDrawer() {
 
     const now = new Date().toISOString();
     const stages = draftStages.map((s, idx) => {
-      const type = s.type || 'custom';
+      const category = s.category || 'CUSTOM';
+      const name = category === 'CUSTOM' ? (s.name.trim() || `단계 ${idx + 1}`) : STAGE_CATEGORY_LABELS[category];
       return {
-        id: s.id, name: s.name.trim() || `단계 ${idx + 1}`,
-        type,
-        status: defaultStatusForType(type),
+        id: s.id, name, category,
+        status: defaultStatusForCategory(category),
         scheduledAt: '', resultAt: '', documentCheckedAt: '', memo: '',
         statusChangedAt: now, statusChangeSource: 'manual'
       };
@@ -1191,7 +1395,7 @@ function wireDetail() {
     const app = applications.find(a => a.id === currentDetailId);
     if (!app) return;
     app.stages.push({
-      id: makeId(), name: `단계 ${app.stages.length + 1}`, type: 'custom', status: '진행 전',
+      id: makeId(), name: '', category: 'CUSTOM', status: '진행 전',
       scheduledAt: '', resultAt: '', documentCheckedAt: '', memo: '',
       statusChangedAt: new Date().toISOString(), statusChangeSource: 'manual'
     });
@@ -1232,13 +1436,17 @@ function wireDetail() {
     const app = applications.find(a => a.id === currentDetailId);
     if (!app) return;
     const item = e.target.closest('.timeline-item');
-    const stage = findStage(app, item.dataset.stageId);
-    if (!stage) return;
+    const idx = app.stages.findIndex(s => s.id === item.dataset.stageId);
+    const stage = app.stages[idx];
+    if (!stage || !isStageUnlocked(app, idx)) return;
 
-    if (field === 'type') {
-      stage.type = e.target.value;
-      if (!statusOptionsForType(stage.type).includes(stage.status)) {
-        stage.status = defaultStatusForType(stage.type);
+    if (field === 'category') {
+      stage.category = e.target.value;
+      stage.name = stage.category === 'CUSTOM'
+        ? (Object.values(STAGE_CATEGORY_LABELS).includes(stage.name) ? '' : stage.name)
+        : STAGE_CATEGORY_LABELS[stage.category];
+      if (!statusOptionsForCategory(stage.category).includes(stage.status)) {
+        stage.status = defaultStatusForCategory(stage.category);
         stage.resultAt = '';
         stage.documentCheckedAt = '';
       }
@@ -1276,8 +1484,9 @@ function wireDetail() {
     const app = applications.find(a => a.id === currentDetailId);
     if (!app) return;
     const item = e.target.closest('.timeline-item');
-    const stage = findStage(app, item.dataset.stageId);
-    if (!stage) return;
+    const idx = app.stages.findIndex(s => s.id === item.dataset.stageId);
+    const stage = app.stages[idx];
+    if (!stage || !isStageUnlocked(app, idx)) return;
     const val = e.target.value.trim();
     if (val === stage[field]) return;
     stage[field] = val;

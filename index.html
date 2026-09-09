@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>지원 현황 트래커</title>
+<title>캐치패스</title>
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -11,13 +11,17 @@
 <div id="authScreen" class="auth-screen">
   <div class="auth-brand">
     <div class="auth-brand-inner">
-      <div class="auth-logo">📋 지원 현황 트래커</div>
-      <h1>여러 곳에 넣은 지원서,<br>한 곳에서 정리하세요</h1>
+      <div class="auth-logo">
+        <span class="auth-logo-kr">캐치패스</span>
+        <span class="auth-logo-en">CatchPass</span>
+      </div>
+      <h1>지원은 많아도,<br>흐름은 놓치지 않게.</h1>
+      <p class="auth-subcopy">흩어진 지원 기록부터 전형 결과까지,<br>캐치패스에서 한눈에 관리하세요.</p>
       <ul class="auth-feature-list">
-        <li>총 몇 곳에 지원했는지 한눈에 확인</li>
-        <li>동일 기업 중복 지원 자동 감지</li>
-        <li>전형 단계별 합격률 시각화</li>
-        <li>서류·면접·과제 결과 날짜까지 기록</li>
+        <li>지원한 기업과 포지션을 한곳에서 관리</li>
+        <li>동일 기업 재지원 이력을 빠르게 확인</li>
+        <li>서류·면접·과제 전형 진행 상황 기록</li>
+        <li>전형별 통과율과 지원 데이터를 한눈에 확인</li>
       </ul>
     </div>
   </div>
@@ -70,7 +74,7 @@
 
 <div id="appShell" class="app-shell" hidden>
   <header class="topbar">
-    <div class="topbar-left"><span class="logo">📋 지원 현황 트래커</span></div>
+    <div class="topbar-left"><span class="logo">캐치패스</span></div>
     <div class="topbar-right">
       <span id="saveStatus" class="save-status"></span>
       <button type="button" id="openAddDrawerBtn" class="btn-primary">+ 기록 추가</button>
@@ -99,8 +103,7 @@
       <section id="view-list" class="view">
         <h2 class="view-title">지원 내역</h2>
 
-        <div class="kpi-grid" id="kpiGrid"></div>
-        <div class="rate-grid" id="rateGrid"></div>
+        <div class="kpi-grid kpi-grid-4" id="kpiGrid"></div>
 
         <div class="filter-bar">
           <input type="text" id="searchInput" placeholder="기업명 검색">
@@ -167,22 +170,23 @@
 
       <section id="view-stats" class="view" hidden>
         <h2 class="view-title">통계</h2>
-        <div class="kpi-grid" id="statsKpiGrid"></div>
-        <div class="rate-grid" id="statsRateGrid"></div>
 
-        <h3 style="margin:22px 0 10px;font-size:14px;">월별 지원 추이</h3>
+        <h3 class="stats-section-title">1. 전체 지원 현황</h3>
+        <div class="kpi-grid kpi-grid-4" id="statsKpiGrid"></div>
+
+        <h3 class="stats-section-title">2. 월별 지원 추이 (최근 3개월)</h3>
         <div class="chart-card">
-          <div id="applyTrendDelta" class="chart-delta"></div>
+          <div id="applyTrendSummary" class="chart-delta"></div>
           <div id="applyTrendChart"></div>
         </div>
 
-        <h3 style="margin:22px 0 10px;font-size:14px;">월별 최종 합격 추이</h3>
-        <div class="chart-card">
-          <div id="passTrendDelta" class="chart-delta"></div>
-          <div id="passTrendChart"></div>
-        </div>
+        <h3 class="stats-section-title">3. 전형 통과율</h3>
+        <div class="rate-grid rate-grid-5" id="statsRateGrid"></div>
 
-        <h3 style="margin:22px 0 10px;font-size:14px;">포지션별 지원 현황</h3>
+        <h3 class="stats-section-title">4. 전형 소요시간</h3>
+        <div class="rate-grid rate-grid-5" id="durationGrid"></div>
+
+        <h3 class="stats-section-title">5. 지원 포지션 분석</h3>
         <table class="simple-table" id="positionStatsTable"></table>
       </section>
 
@@ -271,6 +275,25 @@
       </section>
 
     </main>
+  </div>
+</div>
+
+<div id="releaseModalOverlay" class="release-overlay" hidden>
+  <div class="release-modal" role="dialog" aria-modal="true" aria-labelledby="releaseTitle">
+    <div class="release-modal-body">
+      <span class="release-badge">🎉 업데이트 소식</span>
+      <h2 class="release-title" id="releaseTitle"></h2>
+      <p class="release-desc" id="releaseDesc"></p>
+      <div class="release-meta">
+        <div><span class="release-meta-label">업데이트 버전</span><span class="release-meta-value" id="releaseVersion"></span></div>
+        <div><span class="release-meta-label">업데이트 일시</span><span class="release-meta-value" id="releaseUpdatedAt"></span></div>
+      </div>
+      <div class="release-items" id="releaseItems"></div>
+    </div>
+    <div class="release-footer">
+      <button type="button" id="releaseNeverBtn" class="btn-secondary">다시 보지 않기</button>
+      <button type="button" id="releaseConfirmBtn" class="btn-primary">확인했어요</button>
+    </div>
   </div>
 </div>
 
