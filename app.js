@@ -30,12 +30,12 @@ const PENDING_STATUSES = ['접수완료', '서류 확인', '진행 전', '결과
 const OLD_OLD_STATUSES = ['예정', '결과대기', '합격', '불합격', '지원철회'];
 
 const RELEASE_NOTE = {
-  version: '0.5.0',
-  updatedAt: '2026-09-09T18:12:00+09:00',
-  title: 'CatchPass로 새단장했어요',
-  description: '지원 현황 트래커가 캐치패스라는 이름으로 새롭게 태어났어요.\n전형 관리와 통계 기능도 함께 다듬었어요.',
+  version: '0.6.0',
+  updatedAt: '2026-09-10T16:39:00+09:00',
+  title: '줍줍(JOOB)으로 새롭게 태어났어요',
+  description: '지원 현황을 가볍게 모아 관리한다는 의미를 담아\n줍줍이라는 이름으로 새롭게 단장했어요.',
   items: [
-    { icon: '✨', title: 'CatchPass로 이름이 바뀌었어요', description: '더 직관적인 이름과 브랜드로 새롭게 단장했어요.' },
+    { icon: '✨', title: '줍줍(JOOB)으로 이름이 바뀌었어요', description: '지원하는 오늘이, 더 좋은 내일로 — 새 브랜드로 다시 시작해요.' },
     { icon: '🗂️', title: '전형 카테고리가 더 명확해졌어요', description: '1차·2차 면접, 과제, 처우 협의 등 자주 사용하는 전형을 선택할 수 있어요.' },
     { icon: '🔒', title: '전형 진행 순서가 더 정확해졌어요', description: '이전 전형을 통과해야 다음 전형을 수정할 수 있도록 개선했어요.' },
     { icon: '📊', title: '지원 통계를 더 자세히 확인할 수 있어요', description: '월별 지원 추이, 전형 통과율과 소요시간을 한눈에 확인할 수 있어요.' }
@@ -542,13 +542,13 @@ function renderTable() {
   if (applications.length === 0) {
     tbody.innerHTML = '';
     emptyMsg.hidden = false;
-    emptyMsg.textContent = '등록된 지원 내역이 없습니다. 우측 상단의 "기록 추가"로 시작해보세요.';
+    emptyMsg.innerHTML = '<img src="assets/icon-transparent.png" alt="" class="empty-state-icon"><p>등록된 지원 내역이 없습니다. 우측 상단의 "기록 추가"로 시작해보세요.</p>';
     return;
   }
   if (rows.length === 0) {
     tbody.innerHTML = '';
     emptyMsg.hidden = false;
-    emptyMsg.textContent = '조건에 맞는 지원 내역이 없습니다.';
+    emptyMsg.innerHTML = '<img src="assets/icon-transparent.png" alt="" class="empty-state-icon"><p>조건에 맞는 지원 내역이 없습니다.</p>';
     return;
   }
   emptyMsg.hidden = true;
@@ -906,6 +906,8 @@ function findStage(app, stageId) {
 
 /* ---------- 라우팅 ---------- */
 
+const VIEW_TITLES = { list: '지원 내역', detail: '지원 내역', stats: '통계', calendar: '캘린더', notes: '메모', settings: '설정', help: '도움말' };
+
 async function showView(name) {
   document.querySelectorAll('.view').forEach(v => v.hidden = true);
   const target = document.getElementById(`view-${name}`);
@@ -913,6 +915,7 @@ async function showView(name) {
   document.querySelectorAll('.nav-item').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.view === name);
   });
+  document.title = `줍줍 | ${VIEW_TITLES[name] || 'JOOB'}`;
   if (name === 'list') renderTable();
   if (name === 'stats') { await loadApplicationsFromServer(); renderStatsView(); }
   if (name === 'calendar') renderCalendarView();
@@ -922,6 +925,7 @@ async function showView(name) {
 /* ---------- 인증 / 세션 ---------- */
 
 function showAuthScreen(defaultTab) {
+  document.title = '줍줍 | 로그인';
   document.getElementById('appShell').hidden = true;
   document.getElementById('authScreen').hidden = false;
   document.getElementById('loginEmail').value = '';

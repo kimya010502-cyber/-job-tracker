@@ -1,0 +1,13 @@
+{
+  "name": "줍줍 JOOB",
+  "short_name": "줍줍",
+  "description": "지원하는 오늘이, 더 좋은 내일로.",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#5b5fc7",
+  "theme_color": "#5b5fc7",
+  "icons": [
+    { "src": "assets/icon-blue.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "assets/icon-blue.png", "sizes": "192x192", "type": "image/png" }
+  ]
+}

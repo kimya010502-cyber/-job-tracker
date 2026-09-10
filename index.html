@@ -3,7 +3,10 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>캐치패스</title>
+<title>줍줍 | JOOB</title>
+<link rel="icon" type="image/png" href="assets/icon-blue.png">
+<link rel="apple-touch-icon" href="assets/icon-blue.png">
+<link rel="manifest" href="manifest.json">
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -11,12 +14,8 @@
 <div id="authScreen" class="auth-screen">
   <div class="auth-brand">
     <div class="auth-brand-inner">
-      <div class="auth-logo">
-        <span class="auth-logo-kr">캐치패스</span>
-        <span class="auth-logo-en">CatchPass</span>
-      </div>
       <h1>지원은 많아도,<br>흐름은 놓치지 않게.</h1>
-      <p class="auth-subcopy">흩어진 지원 기록부터 전형 결과까지,<br>캐치패스에서 한눈에 관리하세요.</p>
+      <p class="auth-subcopy">흩어진 지원 기록부터 전형 결과까지,<br>줍줍에서 가볍게 모아 관리하세요.</p>
       <ul class="auth-feature-list">
         <li>지원한 기업과 포지션을 한곳에서 관리</li>
         <li>동일 기업 재지원 이력을 빠르게 확인</li>
@@ -27,6 +26,7 @@
   </div>
   <div class="auth-panel">
     <div class="auth-card">
+      <img src="assets/logo-horizontal.png" alt="줍줍 JOOB" class="auth-card-logo">
       <div class="auth-tabs">
         <button type="button" class="auth-tab active" data-tab="login">로그인</button>
         <button type="button" class="auth-tab" data-tab="signup">회원가입</button>
@@ -74,7 +74,10 @@
 
 <div id="appShell" class="app-shell" hidden>
   <header class="topbar">
-    <div class="topbar-left"><span class="logo">캐치패스</span></div>
+    <div class="topbar-left">
+      <img src="assets/icon-blue.png" alt="줍줍" class="brand-mark-icon">
+      <span class="brand-mark-name">줍줍 | JOOB</span>
+    </div>
     <div class="topbar-right">
       <span id="saveStatus" class="save-status"></span>
       <button type="button" id="openAddDrawerBtn" class="btn-primary">+ 기록 추가</button>
@@ -137,7 +140,7 @@
           </thead>
           <tbody id="appTableBody"></tbody>
         </table>
-        <p id="emptyMsg" class="empty-msg" hidden></p>
+        <div id="emptyMsg" class="empty-state" hidden></div>
       </section>
 
       <section id="view-detail" class="view" hidden>
@@ -211,7 +214,10 @@
         <h2 class="view-title">메모</h2>
         <p class="view-sub">기업 메모 또는 전형별 메모가 있는 지원 건만 모아 보여줍니다.</p>
         <div id="notesList" class="notes-list"></div>
-        <p id="notesEmptyMsg" class="empty-msg" hidden>작성된 메모가 없습니다.</p>
+        <div id="notesEmptyMsg" class="empty-state" hidden>
+          <img src="assets/icon-transparent.png" alt="" class="empty-state-icon">
+          <p>작성된 메모가 없습니다.</p>
+        </div>
       </section>
 
       <section id="view-settings" class="view" hidden>
@@ -281,6 +287,7 @@
 <div id="releaseModalOverlay" class="release-overlay" hidden>
   <div class="release-modal" role="dialog" aria-modal="true" aria-labelledby="releaseTitle">
     <div class="release-modal-body">
+      <img src="assets/logo-horizontal.png" alt="줍줍 JOOB" class="release-logo">
       <span class="release-badge">🎉 업데이트 소식</span>
       <h2 class="release-title" id="releaseTitle"></h2>
       <p class="release-desc" id="releaseDesc"></p>
