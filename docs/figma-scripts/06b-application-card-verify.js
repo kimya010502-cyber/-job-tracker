@@ -23,6 +23,10 @@
  * 이 스크립트는 그 값이 어디서 나오는지 분해해서 보여준다.
  * ========================================================================== */
 
+// 실행 중인 코드가 최신인지 구분하기 위한 고정 식별자.
+// 출력 첫 줄의 scriptVersion 이 아래 값이 아니면 캐시된 구버전을 실행한 것이다.
+const SCRIPT_VERSION = '06b-v3-residual';
+
 const SET_ID = '1037:2163';
 const SET_NAME = 'Application Card';
 
@@ -38,9 +42,9 @@ function out(obj) {
 
 /* ---------- 대상 ---------- */
 const set = await figma.getNodeByIdAsync(SET_ID);
-if (!set) return out({ mode: 'VERIFY', readOnly: true, aborted: true, reason: SET_ID + ' 없음' });
+if (!set) return out({ scriptVersion: SCRIPT_VERSION, mode: 'VERIFY', readOnly: true, aborted: true, reason: SET_ID + ' 없음' });
 if (set.type !== 'COMPONENT_SET') {
-  return out({ mode: 'VERIFY', readOnly: true, aborted: true, reason: SET_ID + ' 는 ' + set.type });
+  return out({ scriptVersion: SCRIPT_VERSION, mode: 'VERIFY', readOnly: true, aborted: true, reason: SET_ID + ' 는 ' + set.type });
 }
 if (set.name !== SET_NAME) notes.push("세트 이름이 '" + SET_NAME + "' 가 아니라 '" + set.name + "'");
 
@@ -253,6 +257,8 @@ const heights = rows.map(r => r.height);
 const heightsEqual = heights.length < 2 || Math.abs(heights[0] - heights[1]) < 0.5;
 
 return out({
+  scriptVersion: SCRIPT_VERSION,
+  hasResidualFields: true,   // 이 키가 없으면 구버전이다
   mode: 'VERIFY',
   readOnly: true,
   aborted: false,
