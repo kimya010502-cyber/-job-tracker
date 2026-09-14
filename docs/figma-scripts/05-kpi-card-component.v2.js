@@ -29,8 +29,8 @@
  *   → 현재 카드 1 "+12 전월 대비" 는 brand 에서 success 로 바뀐다 (의도된 변경).
  *
  * 높이 86 이 유지되는 계산
- *   16(padding) + 16(label) + 4(value row padding-top) + 34(value row) + 16(padding) = 86
- *   value row 높이 = max(number 34, unit 16, caption 16, badge 24) = 34
+ *   16(padding) + 16(label) + 38(value row: padding-top 4 + 콘텐츠 34) + 16(padding) = 86
+ *   value row 콘텐츠 = max(number 34, unit 16, caption 16, badge 24) = 34, 박스 높이 = 4 + 34 = 38
  *   현재 카드 높이 86 과 정확히 같다. absolute 를 걷어내도 화면 크기가 변하지 않는다.
  *
  * 4 개 카드 동일 높이 전략
@@ -62,7 +62,7 @@ const CARD_WIDTH = 235;
 const EXPECTED_HEIGHT = 86;
 
 // 중첩 프레임 기대 높이 (검증용)
-const EXPECTED_VALUE_ROW_H = 34;   // max(number 34, unit 16, caption 16, badge 24)
+const EXPECTED_VALUE_ROW_H = 38;   // 콘텐츠 34 + 자신의 padding-top 4 = 박스 높이 38
 const EXPECTED_VALUE_H     = 34;   // number 34 기준 hug (unit 은 baseline 정렬로 안쪽)
 const EXPECTED_META_H      = 24;   // Chip 24 기준 hug
 
@@ -232,8 +232,8 @@ if (DRY_RUN) {
       badgeExpectedHeight: 24,
       labelExpectedHeight: 16
     },
-    heightMath: '16(padding) + 16(label) + 4(value row padding-top) + ' + EXPECTED_VALUE_ROW_H +
-                '(value row) + 16(padding) = ' + EXPECTED_HEIGHT + ' — 현재 카드 높이와 동일',
+    heightMath: '16(padding) + 16(label) + ' + EXPECTED_VALUE_ROW_H +
+                '(value row = padding-top 4 + 콘텐츠 34) + 16(padding) = ' + EXPECTED_HEIGHT,
     v1BugNote: 'v1 은 value / meta 에 sizing mode 를 지정하지 않아 createFrame 기본값 100 이 남았고, ' +
                'value row 가 max(100,100)=100 이 되어 카드가 152 가 되었다. v2 는 세 프레임 모두 AUTO 로 명시한다.',
     legacySetHandling: legacy
