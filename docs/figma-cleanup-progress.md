@@ -157,26 +157,111 @@ You've reached the Figma MCP tool call limit on the Starter plan.
 
 ---
 
-## 4. 아직 판단이 필요한 항목
+## 4. 확정 사양 (2026-09-14 결정)
 
-| # | 항목 | 내용 |
+### 4-1. Typography
+
+Gothic A1 기반 텍스트 스타일 8개를 **그대로 사용**한다. 지금 우선순위는 폰트 패밀리가 아니라 역할 기반 스타일 통일이다. Pretendard를 쓸 수 있는 환경이 생기면 **텍스트 스타일의 font family만 교체**한다.
+
+### 4-2. 컨트롤 높이 (확정)
+
+| 요소 | 확정 높이 | 기존 |
 |---|---|---|
-| 1 | **MCP 호출 한도** | Starter 플랜 한도에 걸려 남은 8단계를 진행할 수 없다. 한도 리셋 대기 / 플랜 업그레이드 / 수기 작업 중 선택 필요 |
-| 2 | **폰트 확정** | Gothic A1 유지 · 다른 대체 폰트 · Pretendard 조달 후 교체 중 선택 |
-| 3 | **컨트롤 높이 상향** | 요청대로 Button/Select/Input을 36~40으로 올리면 필터 툴바 높이가 59.5 → 약 68~72로, 칩은 18 → 22~24로 커진다. 카드 내부(201px 고정)에 칩 3개가 들어 있어 **카드 높이도 함께 커져야 한다**. "구조 유지" 범위를 넘는 변화라 적용 전 확인 필요 |
-| 4 | **타이포 상향 영향** | Caption 11 → 12, Chip 11 → 12로 올라가면 카드 정보행 높이가 커진다. 3번과 함께 카드 높이 재산정 필요 |
-| 5 | **`Accents/Indigo`** | 기존 변수는 로컬이 아니라 **외부 라이브러리 변수**다. 기록 추가 버튼이 이를 참조 중이므로, 신규 `brand/primary`로 다시 바인딩해야 라이브러리 의존이 끊긴다 |
+| Button | **36** | 28 |
+| Select | **36** | 28 |
+| Input | **36** | 31 |
+| Chip | **22** | 18 |
+| Pagination | **32** | 28 |
+
+40px까지는 올리지 않는다. 데스크톱 정보 밀도를 유지하면서 가독성만 개선하는 선.
+
+### 4-3. Application Card (확정)
+
+- **고정 높이 201 폐기.** Auto Layout 콘텐츠 높이로 전환하고, 필요하면 min-height만 건다
+- 같은 행의 카드는 **stretch/fill**로 높이를 맞춘다
+- width: 기존 grid 구조 유지 / padding **16** / 내부 gap **12** / 정보행 gap **8**
+- radius **8** / border `border/subtle` / shadow `elevation/card`
+- grid 가로 gap **12** / 세로 gap **40 → 24 수준으로 축소**
+- 컴포넌트 생성 후 **실제 콘텐츠를 넣은 샘플 카드로 높이와 grid 리듬을 재확인**한다
+
+### 4-4. KPI / Toolbar
+
+- 컨트롤 높이 상향에 따른 **툴바 높이 증가를 허용**한다. 59.5에 맞추지 않고 Auto Layout으로 재계산
+- KPI ↔ Toolbar 간격도 spacing 토큰 기준으로 정리
+
+### 4-5. brand/primary 재바인딩
+
+외부 라이브러리 변수 `Accents/Indigo` 의존을 제거하고, 기록 추가 버튼을 포함해 해당 색을 쓰는 요소를 로컬 `brand/primary`로 다시 바인딩한다. 이후 JOOB 화면은 외부 Accent 변수에 의존하지 않는다.
+
+### 4-6. 작업 원칙
+
+- 화면을 새로 디자인하지 않는다. 구조와 정보 구성을 유지한 채 일관성·가독성·재사용성만 개선
+- **특정 높이나 좌표를 맞추려고 padding/gap을 임의로 줄이지 않는다**
+- absolute positioning보다 Auto Layout 우선
+- 같은 역할은 반드시 동일 component / token / style 사용
+- 예외가 필요하면 임의로 만들지 말고 **별도 목록으로 보고**
+
+### 4-7. 확정된 작업 순서
+
+1. 기존 텍스트 노드 → Text Style 매핑
+2. 외부 `Accents/Indigo` → 로컬 `brand/primary` 재바인딩
+3. Chip 컴포넌트화
+4. Button 컴포넌트화
+5. Select 컴포넌트화
+6. Input 컴포넌트화
+7. KPI Card 컴포넌트화
+8. Application Card 컴포넌트화
+9. NavItem 컴포넌트화
+10. Pagination Item 컴포넌트화
+11. 기존 독립 프레임 → 인스턴스 교체
+12. Auto Layout 기반 레이아웃 버그 수정
+13. spacing / alignment / overflow 최종 점검
 
 ---
 
-## 5. 다음 재개 지점
+## 5. MCP 호출 한도 — 대기로는 풀리지 않는다
 
-MCP 한도가 풀리면 아래 순서로 이어간다.
+| 항목 | 값 |
+|---|---|
+| Starter 플랜 한도 | **월 20회** (View/Collab 시트 기준) |
+| 리셋 | **월 단위, 결제 주기 기준** — 일 단위 아님 |
+| 현재 사용량 | 20/20 소진 (읽기 12 + 쓰기 5 + 차단 2) |
+| 출처 | [Figma 개발자 문서 — Rate limits & access](https://developers.figma.com/docs/figma-mcp-server/rate-limits-access/) |
 
-1. 텍스트 노드 → 스타일 매핑 (§2 매핑 규칙 사용, 대상 `1002:2` 하위 TEXT 177개)
-2. fill / stroke / cornerRadius / effect 를 변수·스타일에 바인딩
-3. Chip → Button → Select → Input → Card → NavItem → Pagination 순 컴포넌트 생성
-4. 인스턴스 교체
-5. 레이아웃 버그 (§figma-main-screen-spec §9 / design-system-diff §9)
+문서에는 "쓰기 도구는 한도 면제"라고 적혀 있으나 면제 목록은 `add_code_connect_map` · `create_new_file` · `whoami` 뿐이고, 실제로 `use_figma`는 차단됐다.
 
-카드 높이 재산정(위 4-3, 4-4)은 컴포넌트화 **이전**에 결정되어야 Card 컴포넌트를 두 번 만들지 않는다.
+### 이 한도로는 남은 작업을 끝낼 수 없다
+
+남은 13단계는 컴포넌트 8종 생성 + 인스턴스 교체 + 레이아웃 수정이라 **검증을 포함해 최소 15~25회**가 필요하다. 월 20회를 다음 달에 통째로 써도 여유가 없고, 중간 검증(스크린샷·메타데이터 확인)을 할 수 없어 오류를 잡지 못한 채 진행하게 된다.
+
+### 대안: Figma 플러그인 콘솔에서 스크립트 실행 (MCP 한도 무관)
+
+`use_figma`가 실행하는 것은 결국 **Figma Plugin API 자바스크립트**다. 같은 코드를 Figma의 스크립팅 플러그인(예: Scripter)에 붙여넣어 직접 실행하면 **MCP 한도를 전혀 쓰지 않는다.**
+
+작업 흐름:
+
+1. 내가 단계별 스크립트를 `docs/figma-scripts/`에 작성한다
+2. 사용자가 Figma에서 해당 스크립트를 실행한다
+3. 스크립트가 돌려주는 JSON 결과를 나에게 전달한다
+4. 그 결과를 보고 다음 단계 스크립트를 작성한다
+
+이러면 검증 루프가 그대로 유지되면서 호출 한도를 소모하지 않는다.
+
+| 스크립트 | 내용 | 상태 |
+|---|---|---|
+| [`01-text-style-mapping-and-tokens.js`](figma-scripts/01-text-style-mapping-and-tokens.js) | 1단계 텍스트 매핑 + 2단계 재바인딩 + 변수/이펙트 바인딩 | 작성 완료, 실행 대기 |
+| 02 이후 | Chip → Button → Select → Input → KPI Card → Application Card → NavItem → Pagination → 인스턴스 교체 → 레이아웃 | 01 결과 확인 후 작성 |
+
+스크립트는 **재실행해도 안전하도록(멱등)** 작성한다.
+
+---
+
+## 6. 다음 재개 지점
+
+아래 셋 중 하나가 정해져야 진행할 수 있다.
+
+1. **플러그인 콘솔 경로** — `01` 스크립트를 Figma에서 실행하고 결과 JSON 전달 (권장, 추가 비용 없음)
+2. **플랜 업그레이드** — Professional + Dev/Full 시트면 일 200회라 MCP로 한 번에 끝낼 수 있다
+3. **다음 결제 주기까지 대기** — 단, 위 사유로 월 20회로는 완주가 어렵다
+
+카드 높이 재산정(§4-3)은 Application Card 컴포넌트 생성 **이전**에 샘플 카드로 확인해야 컴포넌트를 두 번 만들지 않는다.
