@@ -177,18 +177,55 @@ for (const card of set.children) {
   row.checks.usesStatusIndicator = setsUsed.indexOf('Status Indicator') !== -1;
   row.checks.usesIconButton = instInfo.filter(i => i.main === 'Icon Button').length === 2;
 
-  // 높이 분해 — 219 가 어디서 나오는지
+  // 높이 분해 — 자식 좌표에서 직접 구한다.
+  // 손으로 쓴 공식 대신 실제 y 좌표를 쓰므로, 남는 값(residual)이 곧 설명되지 않은 픽셀이다.
+  const kids = card.children.map(c => ({ name: c.name, y: r2(c.y), height: r2(c.height), bottom: r2(c.y + c.height) }));
+  const firstTop = kids.length ? kids[0].y : 0;
+  const lastBottom = kids.length ? kids[kids.length - 1].bottom : 0;
+  const gaps = [];
+  for (let i = 1; i < kids.length; i++) gaps.push(r2(kids[i].y - kids[i - 1].bottom));
+
+  // auto layout 프레임에서 stroke 가 레이아웃 크기에 포함되는지 여부
+  let strokesInLayout = null, strokeAlign = null, strokeWeight = null;
+  try { strokesInLayout = card.strokesIncludedInLayout; } catch (e) { notes.push('strokesIncludedInLayout 읽기 불가: ' + e.message); }
+  try { strokeAlign = card.strokeAlign; } catch (e) { /* 무시 */ }
+  try { strokeWeight = card.strokeWeight; } catch (e) { /* 무시 */ }
+
+  const sumFromChildren = r2(card.paddingTop + (lastBottom - firstTop) + card.paddingBottom);
+  const residual = r2(card.height - sumFromChildren);
+  const strokeContribution = (strokesInLayout === true && typeof strokeWeight === 'number')
+    ? r2(strokeWeight * 2) : 0;
+
+  let residualExplainedBy;
+  if (near(residual, 0)) residualExplainedBy = '없음 (자식 좌표 합과 정확히 일치)';
+  else if (near(residual, strokeContribution)) residualExplainedBy =
+    '루트 stroke ' + strokeWeight + 'px 상하 (strokesIncludedInLayout = true)';
+  else if (near(residual, 2) && strokesInLayout !== true) residualExplainedBy =
+    '2px 남지만 strokesIncludedInLayout 이 ' + strokesInLayout + ' 이라 stroke 로 설명되지 않음 — gaps / firstTop 을 볼 것';
+  else residualExplainedBy = '미상 ' + residual + 'px — gaps / kids 좌표 확인 필요';
+
   row.heightBreakdown = {
+    cardHeight: r2(card.height),
     cardPaddingTop: r2(card.paddingTop),
-    header: header ? r2(header.height) : null,
-    info: info ? r2(info.height) : null,
-    infoRows: infoRows.map(r => ({ name: r.name, h: r2(r.height) })),
-    footer: footer ? r2(footer.height) : null,
     cardPaddingBottom: r2(card.paddingBottom),
-    sum: r2((header ? header.height : 0) + (info ? info.height : 0) + (footer ? footer.height : 0) +
-            card.paddingTop + card.paddingBottom)
+    children: kids,
+    gapsBetweenChildren: gaps,
+    itemSpacing: r2(card.itemSpacing),
+    primaryAxisAlignItems: card.primaryAxisAlignItems,
+    infoRows: infoRows.map(r => ({ name: r.name, h: r2(r.height) })),
+    firstChildTop: firstTop,
+    lastChildBottom: lastBottom,
+    sumFromChildren,
+    residual,
+    residualExplainedBy,
+    stroke: { align: strokeAlign, weight: strokeWeight, includedInLayout: strokesInLayout, contribution: strokeContribution },
+    formula: '1? + padding ' + r2(card.paddingTop) + ' + ' +
+             kids.map(k => k.name + ' ' + k.height).join(' + ') +
+             ' + padding ' + r2(card.paddingBottom) + ' + 1? = ' + r2(card.height)
   };
-  row.checks.breakdownMatchesHeight = near(row.heightBreakdown.sum, card.height);
+
+  // 자식 좌표 합 + stroke 기여분이 실제 높이와 맞는지
+  row.checks.breakdownMatchesHeight = near(sumFromChildren + strokeContribution, card.height);
 
   // absolute 배치가 남아 있는지
   const absolutes = card.findAll(n => {
@@ -233,6 +270,13 @@ return out({
   heightsEqual,
   measuredHeights: heights,
   heightPolicy: 'content hug 실측값이 정상값이다. 216 같은 숫자에 맞추지 않는다.',
+  breakdownMatchesHeight: rows.every(r => r.checks.breakdownMatchesHeight),
+  residuals: rows.map(r => ({
+    variant: r.variant,
+    residual: r.heightBreakdown.residual,
+    explainedBy: r.heightBreakdown.residualExplainedBy,
+    stroke: r.heightBreakdown.stroke
+  })),
   variants: rows,
   notes,
   errorCount: errors.length,
