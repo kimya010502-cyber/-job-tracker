@@ -21,7 +21,7 @@
  *   default   bg surface/subtle + border border/subtle, placeholder text/muted
  *   focus     default + border brand/primary 1px + elevation/focus-ring
  *   disabled  default + opacity 40%
- *   leading   12×12 아이콘 슬롯, 기본 hidden (Chip·Button 과 동일 방식)
+ *   leading   16×16 아이콘 슬롯, 기본 hidden (visibility 오버라이드 전용)
  *
  * 판단이 필요했던 것 — 아래 3가지는 지시에 명시되지 않아 정하고 보고한다
  *   1) Input 기본 폭 240 고정 (현재 검색창 249 에 가장 가까운 정수. 배치 시 FILL 로 덮어쓰면 됨)
@@ -29,8 +29,9 @@
  *   2) Input 의 '값이 입력된 상태'는 variant 로 만들지 않는다.
  *      텍스트 노드 하나를 placeholder(text/muted)로 두고, 값이 있는 인스턴스에서
  *      텍스트 색만 text/primary 로 오버라이드한다. (variant 를 늘리지 말라는 지시에 따름)
- *   3) leading 슬롯은 12×12 로 통일 (Chip·Button 과 동일). 현재 검색 아이콘은 13.5 라
- *      교체 시 0.75px 줄어든다. 13.5 는 스케일 밖 값이라 12 를 택했다.
+ *   3) Input 의 leading 슬롯은 16×16 (지시로 확정). Input 은 36px 컨트롤이라 12px 아이콘은
+ *      작고, 현재 검색 아이콘 13.5 보다 더 줄일 이유가 없다. 아이콘 크기는 spacing scale 에
+ *      종속시키지 않는다. Select 의 chevron 과 Chip·Button 의 leading 은 역할이 달라 12×12 유지.
  *
  * 실행법
  *   1) DRY_RUN = true  로 실행 → 사전 조건만 검사하고 아무것도 만들지 않는다
@@ -46,6 +47,7 @@ const EXPECTED_FRAME_NAME = '메인 화면 (지원 목록 및 kpi 차트)';
 const TARGET_ID = '1002:2';    // 파일 확인용. 이 프레임은 수정하지 않는다
 const HEIGHT = 36;
 const INPUT_WIDTH = 240;
+const INPUT_ICON = 16;   // Input leading 슬롯. Select chevron / Chip·Button 슬롯은 12 유지
 
 const errors = [];
 const notes = [];
@@ -146,7 +148,7 @@ function planFor(kind) {
     effect: s.focus ? 'elevation/focus-ring' : '(없음)',
     opacity: s.opacity,
     trailing: kind === 'Select' ? 'chevron — 항상 표시되는 Auto Layout 자식' : '(없음)',
-    leading: kind === 'Input' ? '12×12 슬롯, 기본 hidden' : '(없음)',
+    leading: kind === 'Input' ? INPUT_ICON + '×' + INPUT_ICON + ' 슬롯, 기본 hidden' : '(없음)',
     화면에실제존재: s.usedInScreen
       ? (kind === 'Select' ? '예 — 필터 셀렉트 4개' : '예 — 검색 입력')
       : '아니오 (시스템 variant, 현재 화면에 적용하지 않음)'
@@ -171,7 +173,7 @@ if (DRY_RUN) {
     decisionsIMade: [
       'Input 기본 폭 ' + INPUT_WIDTH + ' 고정 / Select 는 hug',
       "Input 의 '값 입력됨' 상태는 variant 로 만들지 않고 텍스트 색 오버라이드(text/primary)로 처리",
-      'leading 슬롯 12×12 로 통일 (현재 검색 아이콘 13.5 → 12 로 줄어듦)'
+      'Input leading 슬롯 16×16 (지시로 확정). Select chevron 은 12×12 유지'
     ],
     scopeNote: '컴포넌트만 생성. 메인 화면 프레임은 읽기만 하며, focus/disabled 는 화면에 적용하지 않는다.',
     placement: 'Button 세트 아래 (없으면 Chip 아래, 그것도 없으면 우측 빈 공간)',
@@ -259,7 +261,7 @@ async function buildSet(kind) {
     if (kind === 'Input') {
       const lead = figma.createFrame();
       lead.name = 'leading';
-      lead.resize(12, 12);
+      lead.resize(INPUT_ICON, INPUT_ICON);
       lead.fills = [];
       c.appendChild(lead);
       lead.layoutSizingHorizontal = 'FIXED';
