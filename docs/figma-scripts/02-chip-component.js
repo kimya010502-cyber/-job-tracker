@@ -35,29 +35,36 @@ const SET_NAME = 'Chip';
 const errors = [];
 const notes = [];
 
+// 모든 반환 경로에서 결과가 보이도록 출력을 한 곳으로 모은다.
+// (Scripter 는 print() 로 표시하고, 그 외 환경은 return 값을 쓴다)
+function out(obj) {
+  try { print(JSON.stringify(obj, null, 2)); } catch (e) { /* Scripter 아님 */ }
+  return obj;
+}
+
 /* ========================================================================
  * 0. 가드 — 올바른 파일인지 확인. 메인 화면 프레임은 읽기만 한다.
  * ====================================================================== */
 const mainFrame = await figma.getNodeByIdAsync(TARGET_ID);
 if (!mainFrame || mainFrame.name !== EXPECTED_FRAME_NAME) {
-  return {
+  return out({
     mode: DRY_RUN ? 'DRY_RUN' : 'APPLY',
     aborted: true,
     reason: '대상 파일이 아님. ' + TARGET_ID + ' = ' + (mainFrame ? '"' + mainFrame.name + '"' : '없음'),
-  };
+  });
 }
 
 // 이미 만들어져 있으면 중복 생성하지 않는다
 const existingSet = figma.currentPage.findAllWithCriteria({ types: ['COMPONENT_SET'] })
   .find(n => n.name === SET_NAME);
 if (existingSet) {
-  return {
+  return out({
     mode: DRY_RUN ? 'DRY_RUN' : 'APPLY',
     aborted: true,
     reason: "'" + SET_NAME + "' 컴포넌트 세트가 이미 존재함 (id " + existingSet.id + "). 중복 생성하지 않음.",
     existingSetId: existingSet.id,
     existingVariants: existingSet.children.map(c => c.name)
-  };
+  });
 }
 
 /* ========================================================================
@@ -86,12 +93,12 @@ const preflight = {
 };
 const missing = Object.keys(preflight).filter(k => !preflight[k]);
 if (missing.length) {
-  return {
+  return out({
     mode: DRY_RUN ? 'DRY_RUN' : 'APPLY',
     aborted: true,
     reason: '사전 조건 누락: ' + missing.join(', '),
     preflight
-  };
+  });
 }
 
 /* ========================================================================
@@ -146,7 +153,7 @@ const plan = VARIANTS.map(v => ({
 }));
 
 if (DRY_RUN) {
-  return {
+  const RESULT = {
     mode: 'DRY_RUN',
     aborted: false,
     preflight,
@@ -162,6 +169,7 @@ if (DRY_RUN) {
     errorCount: errors.length,
     errorSample: errors.slice(0, 8)
   };
+  return out(RESULT);   // print(JSON.stringify(...)) + return 을 한 번에
 }
 
 /* ========================================================================
@@ -273,5 +281,4 @@ const RESULT = {
   errorSample: errors.slice(0, 8)
 };
 
-try { print(JSON.stringify(RESULT, null, 2)); } catch (e) { /* Scripter 아님 */ }
-return RESULT;
+return out(RESULT);
