@@ -368,3 +368,35 @@ Chip 24 는 padding 4(스케일 값) + line-height 16 으로 떨어져 문제가
 컨트롤은 `height = 36` 고정, 가로 padding 12(스케일 값), `counterAxisAlignItems = 'CENTER'`.
 이러면 확정값 36을 정확히 지키면서 스케일 밖 padding 값을 만들지 않는다. Pagination 32 도 32×32 고정으로 동일하게 처리한다.
 (칩은 콘텐츠 hug, 컨트롤은 고정 높이 — 역할이 달라 일관성에 어긋나지 않는다.)
+
+---
+
+## 9. 4~7단계 완료 (2026-09-14)
+
+| 단계 | 컴포넌트 세트 | id | variant | 검증 |
+|---|---|---|---|---|
+| 4 | `Button` | — | primary / secondary / ghost / danger | `allHeight36: true`, notes 0 |
+| 5 | `Select` | — | default / focus / disabled | `allHeight36: true` |
+| 6 | `Input` | — | default / focus / disabled | `allHeight36: true` |
+| 7 | `KPI Card` | `1033:2085` | delta = positive / negative / neutral | 05b 재검증 전 항목 통과 |
+
+Button·Select·Input 공통: height 36 **고정 + 세로 중앙 정렬**, 가로 padding 12, radius 8, Label 13/18/500.
+세로 padding 을 쓰면 (36−18)/2 = 9 가 되어 spacing scale 을 벗어나므로 고정 높이로 처리했다.
+
+Input leading 슬롯만 16×16 (36px 컨트롤에 12 는 작고, 현재 검색 아이콘 13.5 보다 줄일 이유가 없음).
+Select chevron 과 Chip·Button leading 은 12×12 유지 — 역할이 다르므로 같은 규격을 강제하지 않는다.
+
+### KPI Card 에서 잡은 버그와 오판 2건
+
+1. **v1 버그 (실제 결함)** — `figma.createFrame()` 은 100×100 FIXED 로 생성되고 `layoutMode` 만 설정해도
+   sizing mode 가 FIXED 로 남는다. `value` / `meta` 에 AUTO 를 지정하지 않아 둘 다 100 고정이었고,
+   `value row` 가 `max(100,100)=100` 이 되어 카드가 86 이 아니라 **152** 가 됐다. v2 에서 세 프레임 모두 명시.
+2. **v2 검증 오판 (내 기대값 오류)** — `value row` 의 `padding-top 4` 는 그 프레임 자신의 박스 높이에
+   포함되므로 **38 이 정답**인데 콘텐츠 높이 34 를 기대값에 넣었다. 컴포넌트는 처음부터 옳았다.
+   `EXPECTED_VALUE_ROW_H` 를 38 로 정정하고, 재검증은 읽기 전용 스크립트 `05b` 로 따로 수행했다.
+
+### 지원 카드 목록의 UX 의도 (정정)
+
+카드가 12장인 것은 오류가 아니다. **첫 viewport 에 4열 × 2행 = 8장이 온전히 보이고, 3행 상단이 살짝 보여
+"아래에 더 있다"는 스크롤 affordance 를 주는 구조**다. 3행 4장을 삭제하지 않는다.
+다만 푸터의 "총 20개 중 1-8 표시" 문구는 이 구조와 맞지 않으므로 레이아웃 단계에서 따로 고친다.
