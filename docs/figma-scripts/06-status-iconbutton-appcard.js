@@ -481,10 +481,12 @@ for (const s of CARD_STATES) {
       footer: r2(footer.height),
       statusIndicator: r2(siInst.height)
     },
+    // 방향 무관 속성으로 읽는다. info 는 VERTICAL 이라 counterAxisSizingMode 는 '폭'을 뜻하므로
+    // 세 프레임을 같은 축으로 비교하면 안 된다.
     nestedSizing: {
-      header: header.counterAxisSizingMode,
-      info: info.counterAxisSizingMode,
-      footer: footer.counterAxisSizingMode
+      header: { H: header.layoutSizingHorizontal, V: header.layoutSizingVertical },
+      info: { H: info.layoutSizingHorizontal, V: info.layoutSizingVertical },
+      footer: { H: footer.layoutSizingHorizontal, V: footer.layoutSizingVertical }
     },
     childNames: card.children.map(c => c.name),
     instanceCount: card.findAll(n => n.type === 'INSTANCE').length
@@ -513,7 +515,7 @@ for (const c of acComps) createdNodeIds.push(c.id);
 
 /* ---------- 검증 ---------- */
 const nestedHug = acRows.every(r =>
-  r.nestedSizing.header === 'AUTO' && r.nestedSizing.info === 'AUTO' && r.nestedSizing.footer === 'AUTO');
+  r.nestedSizing.header.V === 'HUG' && r.nestedSizing.info.V === 'HUG' && r.nestedSizing.footer.V === 'HUG');
 if (!nestedHug) errors.push('중첩 프레임이 hug 가 아님 (createFrame 100px 버그 재발): ' + JSON.stringify(acRows.map(r => r.nestedSizing)));
 
 const cardHugs = acComps.every(c => c.primaryAxisSizingMode === 'AUTO');

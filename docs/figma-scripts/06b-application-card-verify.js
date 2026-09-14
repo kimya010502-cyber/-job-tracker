@@ -1,0 +1,240 @@
+/* ============================================================================
+ * 줍줍 디자인 시스템 정리 — 스크립트 06b
+ * Application Card 세트 재검증 (읽기 전용)
+ *
+ * 이 스크립트는 아무것도 만들지 않고 아무것도 바꾸지 않는다.
+ * 쓰기 API 를 포함하지 않으며, 모든 대입은 로컬 보고 객체에만 이뤄진다.
+ *
+ * 대상: Application Card 컴포넌트 세트 1037:2163
+ *
+ * 06 의 nestedHug = false 는 컴포넌트 결함이 아니라 검사 코드의 오류였다.
+ *   info 는 VERTICAL auto layout 이다. 세로 프레임에서 counterAxisSizingMode 는
+ *   '높이'가 아니라 '폭'을 제어한다. info 를 가로 FILL 로 만들었으니 폭이 부모에
+ *   묶이고 Figma 는 이를 counterAxisSizingMode = FIXED 로 표현한다. 정상이다.
+ *   header / footer 는 HORIZONTAL 이라 같은 속성이 높이축이어서 AUTO 로 읽혔을 뿐이다.
+ *
+ * 그래서 이 스크립트는 방향에 의존하지 않는 layoutSizingHorizontal / layoutSizingVertical
+ * 을 읽는다. 기대값은 다음과 같다.
+ *   card                 H = FIXED(235)   V = HUG
+ *   header / info / footer H = FILL       V = HUG
+ *   info 의 행 4개         H = FILL       V = HUG
+ *
+ * 높이는 216 같은 특정 숫자에 맞추지 않는다. content hug 실측값이 정상값이며,
+ * 이 스크립트는 그 값이 어디서 나오는지 분해해서 보여준다.
+ * ========================================================================== */
+
+const SET_ID = '1037:2163';
+const SET_NAME = 'Application Card';
+
+const errors = [];
+const notes = [];
+const r2 = n => Math.round(n * 100) / 100;
+const near = (a, b) => typeof a === 'number' && Math.abs(a - b) < 0.5;
+
+function out(obj) {
+  try { print(JSON.stringify(obj, null, 2)); } catch (e) { /* Scripter 아님 */ }
+  return obj;
+}
+
+/* ---------- 대상 ---------- */
+const set = await figma.getNodeByIdAsync(SET_ID);
+if (!set) return out({ mode: 'VERIFY', readOnly: true, aborted: true, reason: SET_ID + ' 없음' });
+if (set.type !== 'COMPONENT_SET') {
+  return out({ mode: 'VERIFY', readOnly: true, aborted: true, reason: SET_ID + ' 는 ' + set.type });
+}
+if (set.name !== SET_NAME) notes.push("세트 이름이 '" + SET_NAME + "' 가 아니라 '" + set.name + "'");
+
+/* ---------- 헬퍼 ---------- */
+function sizing(n) {
+  let h = null, v = null;
+  try { h = n.layoutSizingHorizontal; } catch (e) { /* 무시 */ }
+  try { v = n.layoutSizingVertical; } catch (e) { /* 무시 */ }
+  return {
+    H: h, V: v,
+    layoutMode: n.layoutMode || null,
+    primaryAxisSizingMode: n.primaryAxisSizingMode || null,
+    counterAxisSizingMode: n.counterAxisSizingMode || null
+  };
+}
+async function varOfFill(n) {
+  try {
+    if (!('fills' in n) || !Array.isArray(n.fills) || n.fills.length !== 1) return null;
+    const p = n.fills[0];
+    if (p.type !== 'SOLID' || !p.boundVariables || !p.boundVariables.color) return null;
+    const v = await figma.variables.getVariableByIdAsync(p.boundVariables.color.id);
+    return v ? v.name : null;
+  } catch (e) { return null; }
+}
+async function varOfStroke(n) {
+  try {
+    if (!Array.isArray(n.strokes) || n.strokes.length !== 1) return null;
+    const p = n.strokes[0];
+    if (!p.boundVariables || !p.boundVariables.color) return null;
+    const v = await figma.variables.getVariableByIdAsync(p.boundVariables.color.id);
+    return v ? v.name : null;
+  } catch (e) { return null; }
+}
+async function styleName(id) {
+  try { const s = id ? await figma.getStyleByIdAsync(id) : null; return s ? s.name : null; }
+  catch (e) { return null; }
+}
+
+/* ---------- variant 별 ---------- */
+const rows = [];
+
+for (const card of set.children) {
+  const row = { variant: card.name, id: card.id, width: r2(card.width), height: r2(card.height), checks: {} };
+
+  const header = card.findOne(n => n.name === 'header');
+  const info = card.findOne(n => n.name === 'info');
+  const footer = card.findOne(n => n.name === 'footer');
+  const infoRows = info ? info.children.filter(c => c.name.indexOf('row / ') === 0) : [];
+
+  row.childNames = card.children.map(c => c.name);
+  row.checks.threeDirectChildren = card.children.length === 3;
+
+  // 방향 무관 sizing
+  row.sizing = {
+    card: sizing(card),
+    header: header ? sizing(header) : null,
+    info: info ? sizing(info) : null,
+    footer: footer ? sizing(footer) : null,
+    rows: infoRows.map(r => ({ name: r.name, ...sizing(r) }))
+  };
+
+  row.checks.cardHeightHugs = row.sizing.card.V === 'HUG';
+  row.checks.cardWidthFixed = row.sizing.card.H === 'FIXED';
+  row.checks.headerHugsHeight = !!header && row.sizing.header.V === 'HUG';
+  row.checks.infoHugsHeight = !!info && row.sizing.info.V === 'HUG';
+  row.checks.footerHugsHeight = !!footer && row.sizing.footer.V === 'HUG';
+  row.checks.headerFillsWidth = !!header && row.sizing.header.H === 'FILL';
+  row.checks.infoFillsWidth = !!info && row.sizing.info.H === 'FILL';
+  row.checks.footerFillsWidth = !!footer && row.sizing.footer.H === 'FILL';
+  row.checks.infoRowCount4 = infoRows.length === 4;
+  row.checks.infoRowsFillWidth = infoRows.length > 0 && infoRows.every(r => {
+    try { return r.layoutSizingHorizontal === 'FILL'; } catch (e) { return false; }
+  });
+  row.checks.infoRowsHugHeight = infoRows.length > 0 && infoRows.every(r => {
+    try { return r.layoutSizingVertical === 'HUG'; } catch (e) { return false; }
+  });
+
+  // 간격 규칙
+  row.spacing = {
+    cardPadding: [card.paddingTop, card.paddingRight, card.paddingBottom, card.paddingLeft].map(r2).join('/'),
+    cardAlign: card.primaryAxisAlignItems,
+    infoPaddingTop: info ? r2(info.paddingTop) : null,
+    infoPaddingBottom: info ? r2(info.paddingBottom) : null,
+    infoItemSpacing: info ? r2(info.itemSpacing) : null,
+    footerPaddingTop: footer ? r2(footer.paddingTop) : null
+  };
+  row.checks.cardPadding16 = near(card.paddingTop, 16) && near(card.paddingBottom, 16) &&
+                             near(card.paddingLeft, 16) && near(card.paddingRight, 16);
+  row.checks.cardSpaceBetween = card.primaryAxisAlignItems === 'SPACE_BETWEEN';
+  row.checks.infoPadding12 = !!info && near(info.paddingTop, 12) && near(info.paddingBottom, 12);
+  row.checks.infoGap8 = !!info && near(info.itemSpacing, 8);
+  row.checks.footerPaddingTop8 = !!footer && near(footer.paddingTop, 8);
+
+  // 표면 토큰
+  row.tokens = {
+    cardFill: await varOfFill(card),
+    cardStroke: await varOfStroke(card),
+    cardEffect: await styleName(card.effectStyleId),
+    cardRadius: typeof card.cornerRadius === 'number' ? r2(card.cornerRadius) : 'mixed'
+  };
+  row.checks.fillSurfaceDefault = row.tokens.cardFill === 'surface/default';
+  row.checks.strokeBorderSubtle = row.tokens.cardStroke === 'border/subtle';
+  row.checks.effectElevationCard = row.tokens.cardEffect === 'elevation/card';
+  row.checks.radius8 = near(typeof card.cornerRadius === 'number' ? card.cornerRadius : NaN, 8);
+
+  // footer 상단 구분선
+  let topW = null, otherW = null;
+  try {
+    topW = footer.strokeTopWeight;
+    otherW = [footer.strokeRightWeight, footer.strokeBottomWeight, footer.strokeLeftWeight];
+  } catch (e) { notes.push('개별 stroke weight 읽기 불가: ' + e.message); }
+  row.footerStroke = { top: topW, others: otherW, token: footer ? await varOfStroke(footer) : null };
+  row.checks.footerTopBorderOnly = near(topW, 1) && Array.isArray(otherW) && otherW.every(w => near(w, 0));
+
+  // 인스턴스
+  const insts = card.findAll(n => n.type === 'INSTANCE');
+  row.instanceCount = insts.length;
+  row.checks.sevenInstances = insts.length === 7;
+  const instInfo = [];
+  for (const i of insts) {
+    let mc = null;
+    try { mc = await i.getMainComponentAsync(); }
+    catch (e) { try { mc = i.mainComponent; } catch (e2) { /* 무시 */ } }
+    instInfo.push({
+      name: i.name,
+      main: mc ? mc.name : null,
+      set: mc && mc.parent && mc.parent.type === 'COMPONENT_SET' ? mc.parent.name : (mc ? '(단일 컴포넌트)' : null),
+      height: r2(i.height)
+    });
+  }
+  row.instances = instInfo;
+  const setsUsed = instInfo.map(i => i.set);
+  row.checks.usesChip = setsUsed.filter(s => s === 'Chip').length === 4;
+  row.checks.usesStatusIndicator = setsUsed.indexOf('Status Indicator') !== -1;
+  row.checks.usesIconButton = instInfo.filter(i => i.main === 'Icon Button').length === 2;
+
+  // 높이 분해 — 219 가 어디서 나오는지
+  row.heightBreakdown = {
+    cardPaddingTop: r2(card.paddingTop),
+    header: header ? r2(header.height) : null,
+    info: info ? r2(info.height) : null,
+    infoRows: infoRows.map(r => ({ name: r.name, h: r2(r.height) })),
+    footer: footer ? r2(footer.height) : null,
+    cardPaddingBottom: r2(card.paddingBottom),
+    sum: r2((header ? header.height : 0) + (info ? info.height : 0) + (footer ? footer.height : 0) +
+            card.paddingTop + card.paddingBottom)
+  };
+  row.checks.breakdownMatchesHeight = near(row.heightBreakdown.sum, card.height);
+
+  // absolute 배치가 남아 있는지
+  const absolutes = card.findAll(n => {
+    try { return n.layoutPositioning === 'ABSOLUTE'; } catch (e) { return false; }
+  });
+  row.absoluteCount = absolutes.length;
+  row.checks.noAbsolute = absolutes.length === 0;
+
+  const failed = Object.keys(row.checks).filter(k => row.checks[k] === false);
+  row.failedChecks = failed;
+  if (failed.length) errors.push(card.name + ' 실패: ' + failed.join(', '));
+
+  rows.push(row);
+}
+
+/* ---------- 집계 ---------- */
+const nestedHug = rows.every(r => r.checks.headerHugsHeight && r.checks.infoHugsHeight && r.checks.footerHugsHeight);
+const cardHugs = rows.every(r => r.checks.cardHeightHugs);
+const allInstancesPresent = rows.every(r => r.checks.sevenInstances);
+const spacingOk = rows.every(r => r.checks.cardPadding16 && r.checks.infoPadding12 && r.checks.infoGap8 && r.checks.footerPaddingTop8);
+const tokensOk = rows.every(r => r.checks.fillSurfaceDefault && r.checks.strokeBorderSubtle && r.checks.effectElevationCard && r.checks.radius8);
+const reuseOk = rows.every(r => r.checks.usesChip && r.checks.usesStatusIndicator && r.checks.usesIconButton);
+const noAbsolute = rows.every(r => r.checks.noAbsolute);
+const heights = rows.map(r => r.height);
+const heightsEqual = heights.length < 2 || Math.abs(heights[0] - heights[1]) < 0.5;
+
+return out({
+  mode: 'VERIFY',
+  readOnly: true,
+  aborted: false,
+  componentSetId: SET_ID,
+  componentSetName: set.name,
+  variantCount: set.children.length,
+  axisNote: 'info 는 VERTICAL 이라 counterAxisSizingMode 가 폭을 뜻한다. 높이 판정은 layoutSizingVertical 로 한다.',
+  nestedHug,
+  cardHugs,
+  allInstancesPresent,
+  spacingOk,
+  tokensOk,
+  reuseOk,
+  noAbsolute,
+  heightsEqual,
+  measuredHeights: heights,
+  heightPolicy: 'content hug 실측값이 정상값이다. 216 같은 숫자에 맞추지 않는다.',
+  variants: rows,
+  notes,
+  errorCount: errors.length,
+  errorSample: errors.slice(0, 8)
+});
