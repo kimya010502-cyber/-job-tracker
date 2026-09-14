@@ -29,7 +29,7 @@
  * ========================================================================== */
 
 const DRY_RUN = true;          // ← 실제 생성할 때만 false 로 변경
-const SCRIPT_VERSION = '12-v2-icon-library-oversized-fit';
+const SCRIPT_VERSION = '12-v3-icon-library-counts';
 
 const TARGET_ID = '1002:2';
 const EXPECTED_FRAME_NAME = '메인 화면 (지원 목록 및 kpi 차트)';
@@ -189,6 +189,7 @@ if (DRY_RUN) {
  * ====================================================================== */
 const created = [];
 const comps = [];
+let dotInfo = { created: false };
 
 for (let i = 0; i < ICONS.length; i++) {
   const icon = ICONS[i];
@@ -227,6 +228,8 @@ for (let i = 0; i < ICONS.length; i++) {
       dot.strokes = [];
       comp.appendChild(dot);
       glyph = dot;
+      dotInfo = { created: true, type: dot.type, requestedSize: DOT_SIZE + '×' + DOT_SIZE,
+                  fillBoundTo: V['brand/strong'] ? 'brand/strong' : null };
     }
 
     // 최장변이 캔버스를 넘으면 비율 유지 비례 축소 (rescale 은 획 두께까지 함께 줄인다)
@@ -300,9 +303,10 @@ const resizedIcons = created.filter(c => c.resized).map(c => c.name);
 const unresized = created.filter(c => !c.resized && c.source);
 const resized = created.filter(c => c.resized);
 
-// 일반 15개: vectorPaths 문자열 완전 보존
+// 크기를 바꾸지 않은 vector (Dot·축소본 제외, 현재 14개): vectorPaths 문자열 완전 보존
+// ※ 개수는 하드코딩하지 않는다 — c.source 유무와 c.resized 로 동적 분류한다
 const pathsPreservedForUnresized = unresized.every(c => c.pathPreserved === true);
-// 축소 2개: 비율 + 위상 유지, 최장변 16 이하
+// 축소된 vector (현재 Memo·Bell 2개): 비율 + 위상 유지, 최장변 정확히 16
 const aspectPreservedForResized = resized.every(c => c.aspectPreserved === true);
 const topologyPreservedForResized = resized.every(c => c.topologyPreserved === true);
 const resizedFitExactly = resized.every(c => Math.abs(c.maxDimension - CANVAS) < 0.05);
@@ -316,6 +320,30 @@ if (!topologyPreservedForResized) errors.push('축소한 아이콘의 경로 위
 if (!onlyOversizedWereResized) errors.push('의도하지 않은 아이콘이 축소됨: ' + resizedIcons.join(', '));
 if (!allFitCanvas) errors.push('캔버스를 넘는 글리프가 남아 있음');
 
+// Dot 은 vector 가 아니라 primitive 라 경로 검증 대상이 아니다 — 따로 본다
+const dotEntry = created.find(c => !c.source);
+const dotCheck = dotEntry ? {
+  found: true, name: dotEntry.name, canvas: dotEntry.canvas, glyphSize: dotEntry.glyphSize,
+  sizeIsDotSize: dotEntry.glyphSize === DOT_SIZE + '×' + DOT_SIZE,
+  centered: dotEntry.centered, notResized: dotEntry.resized === false,
+  shapeType: dotInfo.type || null, isEllipse: dotInfo.type === 'ELLIPSE',
+  fillBoundTo: dotInfo.fillBoundTo
+} : { found: false };
+if (!dotCheck.found) errors.push('Icon / Dot 이 생성되지 않음');
+else {
+  if (!dotCheck.sizeIsDotSize) errors.push('Dot 크기가 ' + DOT_SIZE + '×' + DOT_SIZE + ' 이 아님: ' + dotCheck.glyphSize);
+  if (!dotCheck.isEllipse) errors.push('Dot 이 ELLIPSE 가 아님: ' + dotCheck.shapeType);
+  if (!dotCheck.fillBoundTo) errors.push('Dot fill 이 변수에 바인딩되지 않음');
+}
+
+const counts = {
+  total: created.length,
+  vectorSources: created.filter(c => c.source).length,
+  primitives: created.filter(c => !c.source).length,
+  resizedVectors: resized.length,
+  unresizedVectors: unresized.length
+};
+
 if (created.length !== ICONS.length) errors.push('생성된 컴포넌트가 ' + created.length + '개로 기대치 ' + ICONS.length + ' 와 다름');
 
 return out({
@@ -325,6 +353,8 @@ return out({
   createdCount: created.length,
   expectedCount: ICONS.length,
   created,
+  counts,
+  dotCheck,
   allCanvas16,
   allCentered,
   allFitCanvas,
