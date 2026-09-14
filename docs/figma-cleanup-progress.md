@@ -573,3 +573,42 @@ Figma 의 표준 패턴이다. 아이콘마다 컴포넌트를 만들고, 슬롯
    그 탓에 8×8 이 아니거나 fill 바인딩이 실패해도 통과했다. `dotCheck` 를 추가했다.
 
 검증 대상 개수는 전부 **동적 분류**다(`c.source` 유무와 `c.resized`). 숫자를 하드코딩한 곳은 없다.
+
+---
+
+## 14. 아이콘 시스템 3단계 완료 — Chip leading 전환 (2026-09-15)
+
+`13-v5` APPLY 후 `13b-v2` · `05b-v2` · `06b-v4` 전부 통과.
+
+| 검증 | 결과 |
+|---|---|
+| Chip variant 5 · 높이 24 · padding 4/8 · gap 4 · radius/full | 유지 |
+| leading | Icon 인스턴스 16×16 · visible=false · `Icon / Dot` |
+| INSTANCE_SWAP 속성 `leading` | 생성됨 |
+| KPI Card 높이 86 | 유지 |
+| Application Card 높이 219 · direct 인스턴스 7 | 유지 |
+
+### 이 단계에서 겪은 실패와 원인
+
+**v3 APPLY 실패** — `"in addComponentProperty: Property value is incompatible with component property type"`
+
+INSTANCE_SWAP 속성의 `defaultValue` 는 **컴포넌트 key 가 아니라 노드 id** 다.
+같은 호출에서 `preferredValues` 는 `{ type, key }` 로 **key** 를 쓴다. 두 인자가 서로 다른 식별자를 쓴다.
+
+```javascript
+addComponentProperty("ButtonIcon", "INSTANCE_SWAP", "2:22" /* id */, { preferredValues: [{type, key}] })
+```
+
+v3 는 `defaultValue` 에 key 를 넘겨 실패했고, `preferredValues` 형식 자체는 맞았다.
+실패 시점이 첫 단계라 **Chip 은 전혀 변경되지 않았다** (`propertyCreated: false`).
+
+**같은 오류가 검증기에도 있었다** — 13b v1 이 `defaultValue` 를 key 와 비교하고 있어서,
+APPLY 가 성공해도 실패로 보고했을 상태였다. 수정과 검증기가 같은 오해를 공유하면
+"어느 쪽이 틀렸는지" 를 알 수 없게 된다. 이후 검증기는 **id·key 둘 다 대조하고
+어느 쪽으로 매칭됐는지(`defaultValueForm`) 를 보고**하도록 바꿨다.
+
+### stage count Chip
+
+노드 교체로 `leading.visible=true` 오버라이드가 초기화됐다(현재 `false`).
+슬롯이 비어 있어 화면 변화는 없으며, 실제 `Icon / Stage Count` 지정은
+Application Card 적용 단계에서 명시적으로 처리한다.
