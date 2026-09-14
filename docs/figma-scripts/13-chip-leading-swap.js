@@ -12,9 +12,15 @@
  *      - 그 뒤 빈 프레임을 제거한다 (내용이 없으므로 잃는 데이터가 없다)
  *
  * 실행 순서를 이렇게 잡은 이유
- *   속성 추가가 실패할 수 있는 유일한 지점이므로 **가장 먼저** 실행한다.
- *   실패하면 그 시점까지 아무것도 바뀌지 않은 상태로 중단된다.
+ *   속성 추가는 **실패 확률이 가장 높은 단계**라 가장 먼저 실행한다.
+ *   여기서 실패하면 아직 variant 를 건드리지 않은 상태로 중단된다.
  *   프레임 교체를 먼저 하면 속성 추가 실패 시 절반만 바뀐 상태가 남는다.
+ *
+ *   다만 **이 작업은 원자적이지 않다.** 속성 추가 이후의 createInstance / insertChild /
+ *   resize / 속성 참조 연결 / remove 도 런타임 실패할 수 있다.
+ *   그래서 중간에 실패하면 **어느 variant 까지 어떤 단계에서 바뀌었는지** 결과에 남긴다.
+ *   (propertyCreated / variantsAttempted / variantsCompleted / modifiedVariantIds /
+ *    failedAt / partialMutationDetected)
  *
  * 바뀌지 않아야 하는 것
  *   variant 5종 · 높이 24 · padding 4/8 · gap 4 · radius/full · label · tone 토큰
@@ -35,7 +41,7 @@
  * ========================================================================== */
 
 const DRY_RUN = true;          // ← 실제 수정할 때만 false 로 변경
-const SCRIPT_VERSION = '13-v1-chip-leading-swap';
+const SCRIPT_VERSION = '13-v2-chip-leading-swap-partial-tracking';
 
 const CHIP_SET_ID = '1029:1984';
 const CHIP_SET_NAME = 'Chip';
@@ -159,7 +165,8 @@ if (DRY_RUN) {
       step3: 'variant 5개의 빈 leading FRAME 을 ' + DEFAULT_ICON + ' 인스턴스로 교체 (' + SLOT + '×' + SLOT + ', visible=false)',
       step4: '각 인스턴스에 componentPropertyReferences.mainComponent 연결',
       step5: '빈 FRAME 제거 (내용 없음)',
-      order: '속성 추가를 가장 먼저 한다 — 실패해도 아무것도 바뀌지 않은 상태로 중단되도록'
+      order: '속성 추가를 가장 먼저 한다 — 실패 확률이 가장 높은 단계라 그 앞에서 멈추면 variant 가 안 바뀐다',
+      atomicity: '원자적 작업이 아니다. 속성 추가 이후 단계도 실패할 수 있으므로 중간 실패 시 어디까지 바뀌었는지 결과에 남긴다.'
     },
     willNotChange: {
       variants: EXPECTED_VARIANTS,
@@ -199,34 +206,56 @@ if (!propKey) {
   } catch (e) {
     return out({
       scriptVersion: SCRIPT_VERSION, mode: 'APPLY', aborted: true,
-      reason: 'INSTANCE_SWAP 속성 추가 실패 — 아무것도 바꾸지 않고 중단: ' + e.message,
+      reason: 'INSTANCE_SWAP 속성 추가 실패 — variant 는 아직 건드리지 않은 상태로 중단: ' + e.message,
+      propertyCreated: false,
+      variantsAttempted: 0,
+      variantsCompleted: 0,
+      modifiedVariantIds: [],
+      failedAt: { step: 'addComponentProperty', variant: null, message: e.message },
+      partialMutationDetected: false,
       hint: 'preferredValues 옵션이 지원되지 않으면 옵션 없이 재시도하도록 수정이 필요하다.',
       preflight
     });
   }
 }
 
-/* 5-2. variant 별 leading 교체 */
+/* 5-2. variant 별 leading 교체 — 단계별로 어디까지 갔는지 기록한다 */
 const applied = [];
+const failures = [];
+const modifiedVariantIds = [];   // 실제로 문서가 바뀐 variant
+let attempted = 0;
+
 for (const v of chipSet.children) {
+  attempted++;
+  let step = 'start';
   try {
+    step = 'findLeading';
     const oldLeading = v.findOne(n => n.name === 'leading');
-    if (!oldLeading) { errors.push(v.name + ': leading 을 찾지 못함'); continue; }
+    if (!oldLeading) { failures.push({ variant: v.name, id: v.id, step, message: 'leading 을 찾지 못함' }); continue; }
     if (oldLeading.type === 'INSTANCE') { notes.push(v.name + ': 이미 인스턴스 — 건너뜀'); continue; }
 
+    step = 'createInstance';
     const idx = v.children.indexOf(oldLeading);
     const inst = iconDot.createInstance();
     inst.name = 'leading';
-    v.insertChild(idx, inst);
 
+    step = 'insertChild';
+    v.insertChild(idx, inst);
+    modifiedVariantIds.push(v.id);   // 이 시점부터 문서가 바뀌었다
+
+    step = 'resize';
     inst.resize(SLOT, SLOT);
     try { inst.layoutSizingHorizontal = 'FIXED'; inst.layoutSizingVertical = 'FIXED'; }
     catch (e) { notes.push(v.name + ' 인스턴스 sizing 설정 실패: ' + e.message); }
+
+    step = 'setVisible';
     inst.visible = false;
 
+    step = 'propertyReference';
     try { inst.componentPropertyReferences = { mainComponent: propKey }; }
-    catch (e) { errors.push(v.name + ' 속성 참조 연결 실패: ' + e.message); }
+    catch (e) { failures.push({ variant: v.name, id: v.id, step, message: e.message }); }
 
+    step = 'removeOldFrame';
     oldLeading.remove();          // 내용 없는 빈 프레임
 
     applied.push({
@@ -241,9 +270,10 @@ for (const v of chipSet.children) {
       itemSpacingAfter: r2(v.itemSpacing)
     });
   } catch (e) {
-    errors.push(v.name + ' 교체 실패: ' + e.message);
+    failures.push({ variant: v.name, id: v.id, step, message: e.message });
   }
 }
+for (const f2 of failures) errors.push(f2.variant + ' [' + f2.step + '] ' + f2.message);
 
 /* 5-3. 검증 */
 const heightsOk = applied.every(a => Math.abs(a.heightAfter - 24) < 0.5);
@@ -254,6 +284,10 @@ const refsOk = applied.every(a => !!a.propRef);
 const paddingOk = applied.every(a => a.paddingAfter === '4/8/4/8');
 const gapOk = applied.every(a => Math.abs(a.itemSpacingAfter - 4) < 0.01);
 const allFive = applied.length === chipSet.children.length;
+const partialMutationDetected = modifiedVariantIds.length > 0 && applied.length < attempted;
+if (partialMutationDetected) {
+  errors.push('중간 실패 — ' + modifiedVariantIds.length + '개 variant 가 바뀐 상태로 멈췄다. Ctrl+Z 로 되돌린 뒤 원인을 확인할 것.');
+}
 
 if (!heightsOk) errors.push('높이 24 가 아닌 variant 있음');
 if (!slotsOk) errors.push('leading 이 ' + SLOT + '×' + SLOT + ' 이 아닌 variant 있음');
@@ -270,6 +304,13 @@ return out({
   aborted: false,
   chipSetId: chipSet.id,
   propertyKey: propKey,
+  propertyCreated: !existingPropKey,
+  variantsAttempted: attempted,
+  variantsCompleted: applied.length,
+  modifiedVariantIds,
+  failedAt: failures.length ? failures[0] : null,
+  failures,
+  partialMutationDetected,
   applied,
   heightsOk, slotsOk, hiddenOk, instancesOk, refsOk, paddingOk, gapOk, allFive,
   nextVerification: ['13b (Chip 자체)', '05b (KPI Card 높이 86)', '06b (Application Card 높이 219)'],

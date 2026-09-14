@@ -25,7 +25,7 @@
 
 // 실행 중인 코드가 최신인지 구분하기 위한 고정 식별자.
 // 출력 첫 줄의 scriptVersion 이 아래 값이 아니면 캐시된 구버전을 실행한 것이다.
-const SCRIPT_VERSION = '06b-v3-residual';
+const SCRIPT_VERSION = '06b-v4-direct-vs-nested-instances';
 
 const SET_ID = '1037:2163';
 const SET_NAME = 'Application Card';
@@ -159,10 +159,24 @@ for (const card of set.children) {
   row.footerStroke = { top: topW, others: otherW, token: footer ? await varOfStroke(footer) : null };
   row.checks.footerTopBorderOnly = near(topW, 1) && Array.isArray(otherW) && otherW.every(w => near(w, 0));
 
-  // 인스턴스
-  const insts = card.findAll(n => n.type === 'INSTANCE');
-  row.instanceCount = insts.length;
-  row.checks.sevenInstances = insts.length === 7;
+  // 인스턴스 — findAll 은 재귀라 인스턴스 내부까지 센다.
+  // Chip 마스터가 Icon 인스턴스를 품게 되면 총계가 7 에서 11 로 늘어나는데 이는 정상이다.
+  // 따라서 카드가 직접 배치한 인스턴스와 컴포넌트에 딸려 온 중첩 인스턴스를 분리해서 본다.
+  function nestedInsideAnotherInstance(n) {
+    let p = n.parent;
+    while (p && p.id !== card.id) {
+      if (p.type === 'INSTANCE') return true;
+      p = p.parent;
+    }
+    return false;
+  }
+  const allInsts = card.findAll(n => n.type === 'INSTANCE');
+  const insts = allInsts.filter(n => !nestedInsideAnotherInstance(n));
+  const nestedInsts = allInsts.filter(n => nestedInsideAnotherInstance(n));
+  row.instanceCountRecursive = allInsts.length;
+  row.instanceCountDirect = insts.length;
+  row.instanceCountNested = nestedInsts.length;
+  row.checks.sevenDirectInstances = insts.length === 7;
   const instInfo = [];
   for (const i of insts) {
     let mc = null;
@@ -180,6 +194,19 @@ for (const card of set.children) {
   row.checks.usesChip = setsUsed.filter(s => s === 'Chip').length === 4;
   row.checks.usesStatusIndicator = setsUsed.indexOf('Status Indicator') !== -1;
   row.checks.usesIconButton = instInfo.filter(i => i.main === 'Icon Button').length === 2;
+
+  // 중첩 인스턴스는 개수를 고정 조건으로 두지 않는다 — 컴포넌트 구조가 바뀌면 함께 변한다.
+  const nestedInfo = [];
+  for (const i of nestedInsts) {
+    let mc = null;
+    try { mc = await i.getMainComponentAsync(); }
+    catch (e) { try { mc = i.mainComponent; } catch (e2) { /* 무시 */ } }
+    let ownerName = null;
+    let p = i.parent;
+    while (p && p.id !== card.id) { if (p.type === 'INSTANCE') { ownerName = p.name; break; } p = p.parent; }
+    nestedInfo.push({ name: i.name, main: mc ? mc.name : null, insideInstance: ownerName, visible: i.visible });
+  }
+  row.nestedInstances = nestedInfo;
 
   // 높이 분해 — 자식 좌표에서 직접 구한다.
   // 손으로 쓴 공식 대신 실제 y 좌표를 쓰므로, 남는 값(residual)이 곧 설명되지 않은 픽셀이다.
@@ -248,7 +275,15 @@ for (const card of set.children) {
 /* ---------- 집계 ---------- */
 const nestedHug = rows.every(r => r.checks.headerHugsHeight && r.checks.infoHugsHeight && r.checks.footerHugsHeight);
 const cardHugs = rows.every(r => r.checks.cardHeightHugs);
-const allInstancesPresent = rows.every(r => r.checks.sevenInstances);
+const allInstancesPresent = rows.every(r => r.checks.sevenDirectInstances);
+const directCompositionOk = rows.every(r => r.checks.usesChip && r.checks.usesStatusIndicator && r.checks.usesIconButton);
+const nestedInstanceSummary = rows.map(r => ({
+  variant: r.variant,
+  direct: r.instanceCountDirect,
+  nested: r.instanceCountNested,
+  recursiveTotal: r.instanceCountRecursive,
+  nestedBreakdown: r.nestedInstances.map(n => (n.main || '?') + ' in ' + (n.insideInstance || '?'))
+}));
 const spacingOk = rows.every(r => r.checks.cardPadding16 && r.checks.infoPadding12 && r.checks.infoGap8 && r.checks.footerPaddingTop8);
 const tokensOk = rows.every(r => r.checks.fillSurfaceDefault && r.checks.strokeBorderSubtle && r.checks.effectElevationCard && r.checks.radius8);
 const reuseOk = rows.every(r => r.checks.usesChip && r.checks.usesStatusIndicator && r.checks.usesIconButton);
@@ -269,6 +304,9 @@ return out({
   nestedHug,
   cardHugs,
   allInstancesPresent,
+  directCompositionOk,
+  nestedInstanceSummary,
+  instanceCountNote: "findAll 은 재귀라 Chip 내부 Icon 인스턴스까지 센다. 성공 조건은 카드가 직접 배치한 7개이고, 중첩분은 개수를 고정하지 않고 내역만 본다.",
   spacingOk,
   tokensOk,
   reuseOk,
