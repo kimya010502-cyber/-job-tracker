@@ -612,3 +612,63 @@ APPLY 가 성공해도 실패로 보고했을 상태였다. 수정과 검증기�
 노드 교체로 `leading.visible=true` 오버라이드가 초기화됐다(현재 `false`).
 슬롯이 비어 있어 화면 변화는 없으며, 실제 `Icon / Stage Count` 지정은
 Application Card 적용 단계에서 명시적으로 처리한다.
+
+---
+
+## 15) 남은 마스터 4종 아이콘 슬롯 — 스크립트 준비 완료 (APPLY 전)
+
+아이콘 시스템의 마지막 단계. Chip(13) · Icon Button(14) 과 같은 방식으로,
+남은 네 마스터의 빈 FRAME 슬롯을 Icon 인스턴스 + INSTANCE_SWAP 속성으로 바꾼다.
+
+| 마스터 | id | variant | 속성 | 기본 아이콘 | 슬롯 노출 |
+|---|---|---|---|---|---|
+| Button | `1029:1997` | 4 | `leading` | `Icon / Plus` | 숨김 |
+| Input | `1030:2017` | 3 | `leading` | `Icon / Search` | 숨김 |
+| NavItem | `1042:36` | 2 | `icon` | `Icon / Nav / Applications` | **노출** |
+| Pagination Item | `1042:46` | 3 | `icon` | `Icon / Chevron Left` | 숨김 |
+
+전부 **기존 마스터를 수정**한다. 삭제·재생성하지 않는다.
+
+### 기하가 안 변하는 이유
+
+Button 과 Pagination 은 슬롯이 12 → 16 으로 커지지만 둘 다 숨김 상태이고,
+Button 은 높이 36 고정 · 가로 hug, Pagination 은 32×32 고정이라 외곽이 움직이지 않는다.
+Input · NavItem 은 슬롯이 이미 16 이라 변화 자체가 없다.
+Icon Button(14) 때는 슬롯이 보이는 상태라 padding 을 6→4 로 함께 줄여야 했지만 여기는 해당 없음.
+
+### 실패 정책
+
+마스터 단위로 순차 처리하고 **한 마스터가 실패하면 그 뒤 마스터는 진행하지 않는다.**
+어디까지 끝났는지 결과에 남긴다.
+
+| 필드 | 뜻 |
+|---|---|
+| `buttonComplete` / `inputComplete` / `navItemComplete` / `paginationComplete` | 마스터별 완료 |
+| `stoppedAt` / `failedAt` | 어느 마스터의 어느 단계에서 멈췄는지 |
+| `mastersNotStarted` | 앞 마스터 실패로 **시작조차 못 한** 마스터 |
+| `<key>Only` | 속성만 만들어지고 variant 슬롯을 하나도 못 바꾼 상태 |
+| `<key>Partial` | 일부 variant 만 교체된 상태 |
+| `strayInstanceIds` | variant 에 넣지 못하고 페이지에 남은 미아 인스턴스 |
+
+### 사전 조건을 차단용/참고용으로 나눈 이유
+
+부분 적용 후 재실행을 막지 않기 위해서다.
+"속성이 아직 없다" "슬롯이 아직 FRAME 이다" 는 **정상 시작 상태이지 통과 조건이 아니다** —
+한 번 부분 적용된 뒤에는 둘 다 false 가 되는데, 이걸 차단 조건으로 두면 이어서 돌릴 수가 없다.
+그래서 `preflightInfo` 로 빼고 `resumeState`(`untouched` / `propertyOnly` / `partial` / `alreadyDone`)로 보고한다.
+
+### 손대지 않은 마스터를 "기하 파손"으로 오인하던 문제
+
+속성 생성 단계에서 중단하면 기하 측정 코드까지 도달하지 못한다.
+초기값이 `false` 였을 때 이 상태가 "외곽이 깨졌다"로 보고됐다 — 실제로는 **아무것도 안 건드린** 상태다.
+측정 못 함을 `null` 로 두고, 성공 조건은 `!== false`(명시적 파손만 실패)로 바꿨다.
+mock 하네스로 5개 시나리오(정상 / 속성 실패 / 첫 variant 실패 / 중간 variant 실패 / preferredValues 폴백)를
+돌려 확인했다.
+
+### 검증 (읽기 전용, 마스터마다 분리)
+
+`15b` Button · `15c` Input · `15d` NavItem · `15e` Pagination Item.
+네 개 모두 쓰기 API 를 한 줄도 포함하지 않는다.
+`instanceCountRecursive` 는 `findAll` 이 인스턴스 내부까지 재귀하므로 **참고용이며 성공 조건이 아니다.**
+`defaultValue` 는 노드 id·컴포넌트 key 양쪽과 대조하고 어느 쪽으로 맞았는지(`defaultValueForm`)를 보고한다.
+적용 전/후 mock 양방향으로 돌려, 적용 후 4개 전부 통과·적용 전 4개 전부 실패를 확인했다.
