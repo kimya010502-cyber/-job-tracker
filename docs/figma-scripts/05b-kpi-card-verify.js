@@ -20,6 +20,8 @@
  * valueRow 의 padding-top 4 는 그 프레임 자신의 높이에 포함되므로 34 가 아니라 38 이 맞다.
  * ========================================================================== */
 
+const SCRIPT_VERSION = '05b-v2-kpi-verify-versioned';
+
 const SET_ID = '1033:2085';
 const SET_NAME = 'KPI Card';
 
@@ -50,10 +52,10 @@ function out(obj) {
 /* ---------- 대상 확인 ---------- */
 const set = await figma.getNodeByIdAsync(SET_ID);
 if (!set) {
-  return out({ mode: 'VERIFY', aborted: true, reason: SET_ID + ' 노드를 찾을 수 없음' });
+  return out({ scriptVersion: SCRIPT_VERSION, mode: 'VERIFY', aborted: true, reason: SET_ID + ' 노드를 찾을 수 없음' });
 }
 if (set.type !== 'COMPONENT_SET') {
-  return out({ mode: 'VERIFY', aborted: true, reason: SET_ID + ' 는 COMPONENT_SET 이 아니라 ' + set.type });
+  return out({ scriptVersion: SCRIPT_VERSION, mode: 'VERIFY', aborted: true, reason: SET_ID + ' 는 COMPONENT_SET 이 아니라 ' + set.type });
 }
 if (set.name !== SET_NAME) {
   notes.push("세트 이름이 '" + SET_NAME + "' 가 아니라 '" + set.name + "'");
@@ -117,6 +119,18 @@ for (const card of set.children) {
 
   // 배지가 Chip 인스턴스인지 + tone 이 맞는지
   row.checks.badgeIsInstance = !!badge && badge.type === 'INSTANCE';
+
+  // Chip 마스터가 Icon 인스턴스를 품게 되면 배지 안에도 중첩 인스턴스가 생긴다.
+  // 이는 정상이므로 개수를 성공 조건으로 두지 않고 내역만 기록한다.
+  row.badgeNestedInstances = [];
+  if (badge && 'findAll' in badge) {
+    for (const ni of badge.findAll(n => n.type === 'INSTANCE')) {
+      let nmc = null;
+      try { nmc = await ni.getMainComponentAsync(); }
+      catch (e) { try { nmc = ni.mainComponent; } catch (e2) { /* 무시 */ } }
+      row.badgeNestedInstances.push({ name: ni.name, main: nmc ? nmc.name : null, visible: ni.visible });
+    }
+  }
   let mainName = null, mainSet = null;
   if (badge && badge.type === 'INSTANCE') {
     let mc = null;
@@ -182,6 +196,7 @@ const allAutoLayoutOk = rows.every(r =>
   r.checks.heightHugs && r.checks.widthFixed && r.checks.cardSpaceBetween && r.checks.nestedFramesHug);
 
 return out({
+  scriptVersion: SCRIPT_VERSION,
   mode: 'VERIFY',
   readOnly: true,
   aborted: false,
@@ -200,6 +215,8 @@ return out({
   nestedHeightsOk,
   allBadgesAreInstances,
   allBadgeTonesCorrect,
+  badgeNestedInstanceSummary: rows.map(r => ({ variant: r.variant, nested: r.badgeNestedInstances })),
+  nestedInstanceNote: "Chip leading 이 Icon 인스턴스가 되면서 배지 안에 중첩 인스턴스가 생긴다. 정상이며 개수를 조건으로 두지 않는다.",
   allTokensBound,
   allAutoLayoutOk,
   variants: rows,
