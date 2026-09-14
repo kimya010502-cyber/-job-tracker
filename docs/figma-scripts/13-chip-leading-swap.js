@@ -41,7 +41,7 @@
  * ========================================================================== */
 
 const DRY_RUN = true;          // ← 실제 수정할 때만 false 로 변경
-const SCRIPT_VERSION = '13-v2-chip-leading-swap-partial-tracking';
+const SCRIPT_VERSION = '13-v3-chip-leading-swap-stray-tracking';
 
 const CHIP_SET_ID = '1029:1984';
 const CHIP_SET_NAME = 'Chip';
@@ -181,6 +181,22 @@ if (DRY_RUN) {
             'leading 을 켜 둔 상태였으므로 06b 에서 반드시 확인할 것.',
       verifyAfter: ['13b (Chip)', '05b (KPI Card, 높이 86)', '06b (Application Card, 높이 219)']
     },
+    partialMutationPlan: {
+      atomic: false,
+      firstMutatingStep: 'createInstance — Figma 는 createInstance() 결과를 현재 페이지에 붙인다. 이 시점부터 문서가 바뀐다.',
+      stepsInOrder: [
+        '1. addComponentProperty (세트에 1회) — 여기서 실패하면 variant 는 그대로다',
+        '2. findLeading (variant 별, 읽기)',
+        '3. createInstance ← 페이지에 인스턴스가 생긴다 (실패 시 미아 노드 가능)',
+        '4. insertChild ← variant 가 바뀐다',
+        '5. resize / 6. setVisible / 7. propertyReference',
+        '8. removeOldFrame ← 빈 FRAME 제거'
+      ],
+      trackedInApply: ['propertyCreated', 'variantsAttempted', 'variantsCompleted',
+                       'modifiedVariantIds', 'strayInstanceIds', 'failedAt', 'failures', 'partialMutationDetected'],
+      strayHandling: '3 과 4 사이에서 실패하면 variant 에 들어가지 못한 인스턴스가 페이지에 남는다. strayInstanceIds 로 보고하니 그 id 를 지우면 된다.',
+      onFailure: 'Ctrl+Z 로 되돌린 뒤 failedAt.step 을 보고 원인을 확인한다. 화면 백업 1044:47 로는 마스터 수정을 되돌릴 수 없다.'
+    },
     deletions: '각 variant 의 빈 leading FRAME 5개만 제거한다. 그 외 삭제 없음.',
     rollback: '마스터 수정이라 화면 백업 1044:47 로는 못 되돌린다. Ctrl+Z 또는 버전 기록 사용.',
     notes,
@@ -222,12 +238,14 @@ if (!propKey) {
 /* 5-2. variant 별 leading 교체 — 단계별로 어디까지 갔는지 기록한다 */
 const applied = [];
 const failures = [];
-const modifiedVariantIds = [];   // 실제로 문서가 바뀐 variant
+const modifiedVariantIds = [];   // variant 가 실제로 바뀐 것
+const strayInstanceIds = [];     // 만들었지만 variant 에 넣지 못한 미아 인스턴스
 let attempted = 0;
 
 for (const v of chipSet.children) {
   attempted++;
   let step = 'start';
+  let pendingInstanceId = null;
   try {
     step = 'findLeading';
     const oldLeading = v.findOne(n => n.name === 'leading');
@@ -236,12 +254,14 @@ for (const v of chipSet.children) {
 
     step = 'createInstance';
     const idx = v.children.indexOf(oldLeading);
-    const inst = iconDot.createInstance();
+    const inst = iconDot.createInstance();   // Figma 는 이 인스턴스를 현재 페이지에 붙인다
+    pendingInstanceId = inst.id;             // 아직 variant 안에 없다 → 실패 시 미아
     inst.name = 'leading';
 
     step = 'insertChild';
     v.insertChild(idx, inst);
-    modifiedVariantIds.push(v.id);   // 이 시점부터 문서가 바뀌었다
+    pendingInstanceId = null;                // variant 안으로 들어갔다
+    modifiedVariantIds.push(v.id);
 
     step = 'resize';
     inst.resize(SLOT, SLOT);
@@ -270,8 +290,12 @@ for (const v of chipSet.children) {
       itemSpacingAfter: r2(v.itemSpacing)
     });
   } catch (e) {
+    if (pendingInstanceId) strayInstanceIds.push(pendingInstanceId);
     failures.push({ variant: v.name, id: v.id, step, message: e.message });
   }
+}
+if (strayInstanceIds.length) {
+  errors.push('variant 에 넣지 못한 미아 인스턴스 ' + strayInstanceIds.length + '개가 페이지에 남았다: ' + strayInstanceIds.join(', '));
 }
 for (const f2 of failures) errors.push(f2.variant + ' [' + f2.step + '] ' + f2.message);
 
@@ -284,7 +308,7 @@ const refsOk = applied.every(a => !!a.propRef);
 const paddingOk = applied.every(a => a.paddingAfter === '4/8/4/8');
 const gapOk = applied.every(a => Math.abs(a.itemSpacingAfter - 4) < 0.01);
 const allFive = applied.length === chipSet.children.length;
-const partialMutationDetected = modifiedVariantIds.length > 0 && applied.length < attempted;
+const partialMutationDetected = (modifiedVariantIds.length > 0 && applied.length < attempted) || strayInstanceIds.length > 0;
 if (partialMutationDetected) {
   errors.push('중간 실패 — ' + modifiedVariantIds.length + '개 variant 가 바뀐 상태로 멈췄다. Ctrl+Z 로 되돌린 뒤 원인을 확인할 것.');
 }
@@ -308,6 +332,7 @@ return out({
   variantsAttempted: attempted,
   variantsCompleted: applied.length,
   modifiedVariantIds,
+  strayInstanceIds,
   failedAt: failures.length ? failures[0] : null,
   failures,
   partialMutationDetected,
