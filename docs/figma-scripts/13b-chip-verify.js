@@ -19,7 +19,7 @@
  *   label / tone 토큰 구조 유지 · 예상 외 자식 없음
  * ========================================================================== */
 
-const SCRIPT_VERSION = '13b-v1-chip-verify';
+const SCRIPT_VERSION = '13b-v2-chip-verify-defaultvalue-id';
 
 const CHIP_SET_ID = '1029:1984';
 const CHIP_SET_NAME = 'Chip';
@@ -83,7 +83,8 @@ async function radiusToken(n) {
 const iconComps = figma.currentPage.findAllWithCriteria({ types: ['COMPONENT'] })
   .filter(c => (!c.parent || c.parent.type !== 'COMPONENT_SET') && c.name.indexOf('Icon / ') === 0);
 const keyToName = {};
-for (const c of iconComps) if (c.key) keyToName[c.key] = c.name;
+const idToName = {};
+for (const c of iconComps) { if (c.key) keyToName[c.key] = c.name; idToName[c.id] = c.name; }
 const iconDot = iconComps.find(c => c.name === DEFAULT_ICON) || null;
 
 /* ---------- 컴포넌트 속성 ---------- */
@@ -102,12 +103,22 @@ const property = {
   nameIsLeading: !!propKey && propKey.split('#')[0] === PROP_NAME,
   type: propDef ? propDef.type : null,
   typeIsInstanceSwap: !!propDef && propDef.type === 'INSTANCE_SWAP',
-  defaultValueKey: propDef ? propDef.defaultValue : null,
-  defaultIsIconDot: !!(propDef && iconDot && propDef.defaultValue === iconDot.key),
-  defaultResolvedName: propDef ? (keyToName[propDef.defaultValue] || null) : null,
+  // INSTANCE_SWAP 의 defaultValue 는 컴포넌트 key 가 아니라 **노드 id** 다 (Figma 공식 문서 예시 기준).
+  // 다만 런타임이 어느 형태로 돌려주는지 단정하지 않고 둘 다 대조해 어느 쪽이 맞았는지 보고한다.
+  defaultValue: propDef ? propDef.defaultValue : null,
+  defaultMatchesNodeId: !!(propDef && iconDot && propDef.defaultValue === iconDot.id),
+  defaultMatchesKey: !!(propDef && iconDot && iconDot.key && propDef.defaultValue === iconDot.key),
+  defaultIsIconDot: !!(propDef && iconDot &&
+    (propDef.defaultValue === iconDot.id || (iconDot.key && propDef.defaultValue === iconDot.key))),
+  defaultValueForm: propDef && iconDot
+    ? (propDef.defaultValue === iconDot.id ? 'node id'
+       : (iconDot.key && propDef.defaultValue === iconDot.key ? 'component key' : 'unknown'))
+    : null,
+  defaultResolvedName: propDef ? (idToName[propDef.defaultValue] || keyToName[propDef.defaultValue] || null) : null,
   preferredValueCount: preferred.length,
   preferredValueNames: preferredNames,
   preferredCoversLibrary: preferred.length === iconComps.length,
+  preferredOmitted: preferred.length === 0,   // 13 이 preferredValues 없이 생성했을 수 있다
   preferredAllAreIcons: preferredNames.every(n => n.indexOf('Icon / ') === 0)
 };
 if (!property.found) errors.push('INSTANCE_SWAP 속성 ' + PROP_NAME + ' 을 찾지 못함');
@@ -115,7 +126,8 @@ else {
   if (!property.typeIsInstanceSwap) errors.push('속성 타입이 INSTANCE_SWAP 이 아님: ' + property.type);
   if (!property.nameIsLeading) errors.push('속성 이름이 ' + PROP_NAME + ' 이 아님');
   if (!property.defaultIsIconDot) errors.push('기본 컴포넌트가 ' + DEFAULT_ICON + ' 이 아님 (해석: ' + property.defaultResolvedName + ')');
-  if (!property.preferredCoversLibrary) errors.push('preferredValues 가 ' + preferred.length + '개로 아이콘 라이브러리 ' + iconComps.length + '개와 다름');
+  if (property.preferredOmitted) notes.push('preferredValues 가 비어 있다 — 13 이 옵션 없이 속성을 만들었을 수 있다. 치명적이지 않으나 스왑 목록이 전체 컴포넌트로 열린다.');
+  else if (!property.preferredCoversLibrary) errors.push('preferredValues 가 ' + preferred.length + '개로 아이콘 라이브러리 ' + iconComps.length + '개와 다름');
   if (!property.preferredAllAreIcons) errors.push('preferredValues 에 Icon 이 아닌 항목이 있음');
 }
 

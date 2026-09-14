@@ -31,6 +31,14 @@
  *   기존 visible 오버라이드가 초기화될 수 있다.** 특히 Application Card 의
  *   stage count 칩은 leading 을 켜 둔 상태였다 → 06b 에서 반드시 확인한다.
  *
+ * v5 에서 고친 것 — v3 APPLY 실패 원인
+ *   "in addComponentProperty: Property value is incompatible with component property type"
+ *   INSTANCE_SWAP 의 defaultValue 는 컴포넌트 key 가 아니라 **노드 id** 다.
+ *   공식 문서 예시: addComponentProperty(name, "INSTANCE_SWAP", "2:22" (= id), { preferredValues: [...] })
+ *   반면 preferredValues 항목은 { type, key } 로 **key** 를 쓴다. 둘이 서로 다른 식별자다.
+ *   v3 는 defaultValue 에 key 를 넘겨 실패했다. preferredValues 형식 자체는 맞았다.
+ *   v5 는 id 로 고치고, 그래도 실패하면 preferredValues 없이 한 번 더 시도해 원인을 분리한다.
+ *
  * 롤백
  *   마스터 수정이라 화면 백업 1044:47 로는 되돌릴 수 없다. Ctrl+Z 또는 버전 기록을 쓴다.
  *
@@ -41,7 +49,7 @@
  * ========================================================================== */
 
 const DRY_RUN = true;          // ← 실제 수정할 때만 false 로 변경
-const SCRIPT_VERSION = '13-v4-chip-leading-swap-mutation-kinds';
+const SCRIPT_VERSION = '13-v5-instance-swap-defaultvalue-is-node-id';
 
 const CHIP_SET_ID = '1029:1984';
 const CHIP_SET_NAME = 'Chip';
@@ -124,7 +132,8 @@ const preflight = {
   iconLibraryFound: iconComps.length > 0,
   iconLibraryCount17: iconComps.length === 17,
   defaultIconFound: !!iconDot,
-  defaultIconHasKey: !!(iconDot && iconDot.key),
+  defaultIconHasId: !!(iconDot && iconDot.id),
+  someIconsHaveKey: iconComps.filter(c => !!c.key).length > 0,
   everyVariantHasLeading: variantReport.every(v => v.leading.exists),
   leadingsAreFrames: variantReport.every(v => v.leading.exists && v.leading.type === 'FRAME'),
   propertyNotYetAdded: !existingPropKey
@@ -158,9 +167,14 @@ if (DRY_RUN) {
     target: { id: chipSet.id, name: chipSet.name, variantCount: chipSet.children.length },
     currentStructure: variantReport,
     iconLibraryCount: iconComps.length,
+    iconsWithKeyCount: iconComps.filter(c => !!c.key).length,
+    defaultIconNodeId: iconDot ? iconDot.id : null,
     iconLibrary,
     plan: {
       step1: "Chip 세트에 INSTANCE_SWAP 속성 '" + PROP_NAME + "' 추가 (기본값 " + DEFAULT_ICON + ")",
+      step1Call: 'addComponentProperty(leading, INSTANCE_SWAP, defaultValue=' + (iconDot ? iconDot.id : '?') +
+                 ' [노드 id], { preferredValues: [{type, key}] } [컴포넌트 key])',
+      step1Note: 'defaultValue 는 노드 id, preferredValues 는 key 로 서로 다른 식별자다. v3 는 여기에 key 를 넘겨 실패했다.',
       step2: 'preferredValues 를 Icon 라이브러리 ' + iconComps.length + '종으로 제한',
       step3: 'variant 5개의 빈 leading FRAME 을 ' + DEFAULT_ICON + ' 인스턴스로 교체 (' + SLOT + '×' + SLOT + ', visible=false)',
       step4: '각 인스턴스에 componentPropertyReferences.mainComponent 연결',
@@ -218,18 +232,36 @@ if (DRY_RUN) {
 
 /* 5-1. 속성 추가 — 실패 가능 지점이므로 가장 먼저 */
 let propKey = existingPropKey;
+let propertyCreationStrategy = existingPropKey ? "기존 속성 재사용" : null;
+let attemptA = null, attemptB = null;
 if (!propKey) {
+  const preferred = iconComps.filter(c => !!c.key).map(c => ({ type: 'COMPONENT', key: c.key }));
   try {
-    const preferred = iconComps
-      .filter(c => !!c.key)
-      .map(c => ({ type: 'COMPONENT', key: c.key }));
-    propKey = chipSet.addComponentProperty(PROP_NAME, 'INSTANCE_SWAP', iconDot.key,
-                                           { preferredValues: preferred });
-    notes.push('INSTANCE_SWAP 속성 생성: ' + propKey + ' (preferredValues ' + preferred.length + '종)');
+    try {
+      // A: 노드 id + preferredValues (문서상 올바른 형식)
+      propKey = chipSet.addComponentProperty(PROP_NAME, 'INSTANCE_SWAP', iconDot.id,
+                                             { preferredValues: preferred });
+      propertyCreationStrategy = 'nodeId + preferredValues';
+      notes.push('INSTANCE_SWAP 속성 생성: ' + propKey + ' (preferredValues ' + preferred.length + '종)');
+    } catch (eA) {
+      attemptA = eA.message;
+      // B: preferredValues 없이 — 실패 원인이 옵션 쪽인지 분리한다
+      propKey = chipSet.addComponentProperty(PROP_NAME, 'INSTANCE_SWAP', iconDot.id);
+      propertyCreationStrategy = 'nodeId only (preferredValues 거부됨)';
+      notes.push('preferredValues 옵션이 거부되어 없이 생성했다. 거부 사유: ' + eA.message);
+    }
   } catch (e) {
+    attemptB = e.message;
     return out({
       scriptVersion: SCRIPT_VERSION, mode: 'APPLY', aborted: true,
-      reason: 'INSTANCE_SWAP 속성 추가 실패 — variant 는 아직 건드리지 않은 상태로 중단: ' + e.message,
+      reason: 'INSTANCE_SWAP 속성 추가 실패 — variant 는 아직 건드리지 않은 상태로 중단',
+      diagnosis: {
+        attemptA_withPreferredValues: attemptA === null ? '시도 안 함' : '실패: ' + attemptA,
+        attemptB_withoutPreferredValues: '실패: ' + attemptB,
+        defaultValuePassed: iconDot.id,
+        defaultValueKind: '노드 id (문서 기준 올바른 형식)',
+        conclusion: '두 시도 모두 실패 — defaultValue 형식 문제가 아니다. 두 메시지를 비교할 것.'
+      },
       propertyCreated: false,
       variantsAttempted: 0,
       variantsCompleted: 0,
@@ -345,6 +377,8 @@ return out({
   chipSetId: chipSet.id,
   propertyKey: propKey,
   propertyCreated: propertyCreatedThisRun,
+  propertyCreationStrategy,
+  propertyAttemptAError: attemptA,
   variantsAttempted: attempted,
   variantsCompleted: applied.length,
   modifiedVariantIds,
