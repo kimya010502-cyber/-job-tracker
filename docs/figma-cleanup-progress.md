@@ -434,3 +434,45 @@ Application Card 는 직속 자식 3개(header / info / footer)로 래퍼 2겹�
 
 교훈: 실측이 기대와 다를 때 **컴포넌트를 고치기 전에 검증식을 먼저 의심**한다.
 두 번 모두 원인은 검증 코드였다.
+
+---
+
+## 11. 9·10단계 완료 + 교체 전 사전 점검 결과 (2026-09-14)
+
+`NavItem` (state = active / inactive, 32 고정) 과 `Pagination Item` (state = default / current / disabled, 32×32) 생성 완료.
+NavItem 은 활성/비활성이 **색만 다르다**. 현재 화면은 활성 40 / 비활성 32 라 메뉴를 옮길 때마다 목록이 8px 밀렸다.
+
+### 사전 점검(08a) 결론
+
+| 영역 | 결과 |
+|---|---|
+| 지원 카드 그리드 `1002:140` | **`layoutMode = GRID`**, 자식 12개 모두 `layoutPositioning = AUTO` → **Auto Layout** |
+| → Phase E | **독립 실행**한다. 12단계 그리드 재구성과 합치지 않고 기존 Grid 구조를 유지한 채 인스턴스만 교체 |
+| 푸터 ↔ 그리드 | **51.5px 겹침** |
+| KPI Strip | `counterAxisAlignItems = MIN` → STRETCH 필요 |
+
+### viewportProjection 판정 정정
+
+스크립트는 3행이 219 중 **214.5px(약 98%)** 노출되는 것을 `uxIntentHeld = true` 로 판정했는데, **이 판정 기준이 잘못됐다.**
+
+UX 의도는 "3행이 거의 다 보이는 것"이 아니라 **"2행은 온전히 보이고 3행은 상단 일부만 보여 아래에 더 있음을 암시하는 것"** 이다.
+98% 노출은 의도보다 과하다.
+
+- 교체 단계에서는 **현재 배치를 그대로 유지**한다
+- 12단계 레이아웃 정리에서 viewport / scroll 영역을 다시 잡는다
+- **정확한 3행 노출 px 는 지금 고정하지 않는다.** 최종 레이아웃 육안 검토 후 결정
+
+### 12단계에서 반드시 수정할 항목
+
+1. 푸터 ↔ 그리드 51.5px 겹침 해소
+2. 푸터의 absolute positioning 제거
+3. KPI Strip `counterAxisAlignItems` MIN → STRETCH (4장 동일 높이)
+4. Main content 의 실제 세로 스크롤 구조 정리
+5. 4×2 완전 노출 + 3행 상단 일부 노출로 재조정
+6. 푸터 문구 "총 20개 중 1-8 표시" 를 연속 스크롤 구조에 맞게 재검토
+
+### 인스턴스 교체 진행 방식
+
+Phase A(단독 Chip) → B(Toolbar) → C(기록 추가) → D(KPI Card) → E(지원 카드 12) → F(NavItem·Pagination).
+각 Phase 는 **DRY_RUN → APPLY → 읽기 전용 VERIFY** 순으로 진행하고,
+기존 노드는 **삭제하지 않고 `visible = false`** 로 남겨 롤백 경로를 유지한다.
