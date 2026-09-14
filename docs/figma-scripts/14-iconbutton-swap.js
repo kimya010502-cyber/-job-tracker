@@ -44,7 +44,7 @@
  * ========================================================================== */
 
 const DRY_RUN = true;          // ← 실제 수정할 때만 false 로 변경
-const SCRIPT_VERSION = '14-v1-iconbutton-swap';
+const SCRIPT_VERSION = '14-v2-iconbutton-swap-masteronly-state';
 
 const IB_ID = '1037:2091';
 const IB_NAME = 'Icon Button';
@@ -210,10 +210,14 @@ if (DRY_RUN) {
         '4. Application Card 의 버튼 4개에 setProperties (variant 2 × 버튼 2)'
       ],
       partialStates: [
-        'propertyCreated=true / iconSlotReplaced=false → 속성만 추가됨 (propertyOnly)',
-        'iconSlotReplaced=true / cardAssignmentsCompleted<4 → 마스터는 바뀌고 카드 지정이 덜 됨 (someCards)',
-        'strayInstanceIds.length>0 → 미아 인스턴스 존재 (strayInstances)'
+        'propertyOnly           — 속성만 추가 (padding·슬롯 미변경)',
+        'propertyAndPaddingOnly — 속성 + padding 까지만 (슬롯 미교체)',
+        'masterIncomplete       — 마스터가 위 둘 어디에도 안 맞는 중간 상태',
+        'masterOnly             — Icon Button 마스터는 완료, 카드 지정 0/N (link·more 구분이 아직 없음)',
+        'someCards              — 카드 지정이 1개 이상 N 미만',
+        'strayInstances         — variant 에 넣지 못한 미아 인스턴스 존재'
       ],
+      detectionRule: 'iconSlotReplaced=true 이고 cardAssignmentsCompleted < 기대치면 반드시 partialMutationDetected=true 가 된다.',
       onFailure: 'Ctrl+Z 로 되돌린 뒤 failedAt.step 을 확인한다. 화면 백업 1044:47 로는 마스터 수정을 되돌릴 수 없다.'
     },
     willNotChange: {
@@ -370,11 +374,26 @@ for (const f of failures) errors.push('[' + f.step + '] ' + f.message);
 if (failures.length) failedAt = failures[0];
 
 const propertyCreatedThisRun = !existingPropKey;
+
+// 기대 지정 수는 고정하지 않고 실제 구조에서 계산한다 (variant 2 × 버튼 2 = 4)
+const EXPECTED_ASSIGNMENTS = acSet.children.length * Object.keys(BUTTON_ICON).length;
+const masterComplete = !!propKey && paddingUpdated && iconSlotReplaced;
+const cardsComplete = assignCompleted === EXPECTED_ASSIGNMENTS;
+
+// v1 은 someCards 를 assignCompleted < assignAttempted 로 판정해서,
+// 지정 루프에 진입조차 못 한 경우(assignAttempted=0)를 놓쳤다.
+// 마스터가 다 바뀌었는데 카드가 0/4 인 상태가 어느 분류에도 들어가지 않았다.
 const partialMutationKind = [];
-if (propertyCreatedThisRun && !iconSlotReplaced) partialMutationKind.push('propertyOnly');
-if (iconSlotReplaced && assignCompleted < assignAttempted) partialMutationKind.push('someCards');
+if (!masterComplete) {
+  if (propKey && !paddingUpdated && !iconSlotReplaced) partialMutationKind.push('propertyOnly');
+  else if (propKey && paddingUpdated && !iconSlotReplaced) partialMutationKind.push('propertyAndPaddingOnly');
+  else partialMutationKind.push('masterIncomplete');
+} else if (assignCompleted === 0) {
+  partialMutationKind.push('masterOnly');
+} else if (!cardsComplete) {
+  partialMutationKind.push('someCards');
+}
 if (strayInstanceIds.length) partialMutationKind.push('strayInstances');
-if (paddingUpdated && !iconSlotReplaced) partialMutationKind.push('paddingOnly');
 const partialMutationDetected = partialMutationKind.length > 0;
 
 const slotNow = ib.children.find(c => c.name === PROP_NAME) || null;
@@ -399,7 +418,23 @@ const linkAndMoreDiffer = acSet.children.every(v => {
 
 if (!outerUnchanged) errors.push('Icon Button 외곽이 ' + OUTER + '×' + OUTER + ' 에서 벗어남: ' + ibAfter.size);
 if (!linkAndMoreDiffer) errors.push('link 와 more 가 같은 아이콘이다 — 이번 단계의 핵심 목표 실패');
-if (assignCompleted !== assignAttempted) errors.push('카드 아이콘 지정 ' + assignCompleted + '/' + assignAttempted + ' 만 완료');
+if (!cardsComplete) errors.push('카드 아이콘 지정 ' + assignCompleted + '/' + EXPECTED_ASSIGNMENTS + ' 만 완료');
+if (partialMutationDetected) errors.push('부분 수정 감지 [' + partialMutationKind.join(', ') + '] — 속성=' + !!propKey +
+  ', padding=' + paddingUpdated + ', 슬롯=' + iconSlotReplaced + ', 카드=' + assignCompleted + '/' + EXPECTED_ASSIGNMENTS +
+  ', 미아=' + strayInstanceIds.length + '. Ctrl+Z 로 되돌린 뒤 failedAt 을 확인할 것.');
+
+// 최종 성공 조건 — 하나라도 어긋나면 successCriteriaMet = false
+const successCriteria = {
+  propertyCreated: propertyCreatedThisRun === true,
+  paddingUpdated: paddingUpdated === true,
+  iconSlotReplaced: iconSlotReplaced === true,
+  cardAssignmentsComplete: cardsComplete,
+  linkAndMoreDiffer: linkAndMoreDiffer === true,
+  noStrayInstances: strayInstanceIds.length === 0,
+  noPartialMutation: partialMutationDetected === false,
+  noErrors: errors.length === 0
+};
+const successCriteriaMet = Object.keys(successCriteria).every(k => successCriteria[k]);
 
 return out({
   scriptVersion: SCRIPT_VERSION,
@@ -414,8 +449,11 @@ return out({
   iconButtonBefore: ibCurrent,
   iconButtonAfter: ibAfter,
   outerUnchanged,
+  cardAssignmentsExpected: EXPECTED_ASSIGNMENTS,
   cardAssignmentsAttempted: assignAttempted,
   cardAssignmentsCompleted: assignCompleted,
+  cardsComplete,
+  masterComplete,
   assignments,
   iconSwapValueForm,
   linkAndMoreDiffer,
@@ -424,6 +462,8 @@ return out({
   failures,
   partialMutationKind,
   partialMutationDetected,
+  successCriteria,
+  successCriteriaMet,
   nextVerification: ['14b (Icon Button)', '06b-v4 (Application Card, 높이 219)'],
   notes,
   errorCount: errors.length,
