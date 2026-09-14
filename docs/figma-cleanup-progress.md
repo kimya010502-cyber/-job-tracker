@@ -544,3 +544,32 @@ Figma 의 표준 패턴이다. 아이콘마다 컴포넌트를 만들고, 슬롯
 `Icon Button` · `Application Card` · `KPI Card`
 
 `08b`(Chip dot 추가)를 포함해 아이콘 관련 스크립트도 이 시점에는 작성하지 않는다.
+
+---
+
+## 13. 아이콘 시스템 1단계 완료 — Icon Library 17종 (2026-09-14)
+
+`12-v3-icon-library-counts` APPLY. `errorCount: 0`.
+
+| 검증 | 결과 |
+|---|---|
+| `createdCount` | 17 |
+| `counts` | vector 16 / primitive 1 / 축소 2 / 미축소 14 |
+| `allCanvas16` · `allCentered` · `allFitCanvas` | true |
+| `onlyOversizedWereResized` | true — `Icon / Nav / Memo`, `Icon / Bell` 만 |
+| `pathsPreservedForUnresized` | true (14개, 경로 문자열 완전 일치) |
+| `aspectPreservedForResized` · `topologyPreservedForResized` | true (2개) |
+| `dotCheck` | 8×8 ELLIPSE, fill → `brand/strong` |
+| `mainFrameIntact` | true — 원본 `1002:2` 자식 수 불변 |
+
+축소 2건: `Nav / Memo` 16.5×11.27 → 16×10.93 · `Bell` 13.33×16.67 → 12.8×16.
+`rescale()` 을 써서 획 두께까지 함께 줄였고 종횡비는 소수 셋째 자리까지 동일하다.
+
+### 이 단계에서 고친 검증 결함 2건
+
+1. **`allPathsPreserved` 가 축소본까지 문자열 일치로 판정** — 축소하면 좌표가 바뀌므로 당연히 실패한다.
+   대상을 `unresized`(source 있고 축소 안 된 것)로 좁히고, 축소본은 **종횡비 + 경로 위상**으로 따로 본다.
+2. **`Icon / Dot` 전용 검증이 없었다** — source 가 없어 경로 검증에서 빠지는데,
+   그 탓에 8×8 이 아니거나 fill 바인딩이 실패해도 통과했다. `dotCheck` 를 추가했다.
+
+검증 대상 개수는 전부 **동적 분류**다(`c.source` 유무와 `c.resized`). 숫자를 하드코딩한 곳은 없다.
