@@ -5,6 +5,8 @@
  * 확정 사양
  *   canvas      16 × 16 (17개 전부)
  *   glyph       원본 크기 유지 · 캔버스 중앙 정렬 · vectorPaths 보존
+ *               예외: max(w,h) > 16 인 글리프만 **비율 유지 비례 축소**로 최장변을 정확히 16 으로 맞춘다
+ *               (rescale 사용 — 획 두께까지 함께 줄어든다). 나머지 15개는 크기를 바꾸지 않는다.
  *   instance    리사이즈하지 않는다 (호스트 슬롯도 전부 16×16 으로 맞춘다)
  *   Icon / Dot  원본 벡터 없이 8×8 원을 중앙에 생성. 시즌 6px / 동기화 8px → 8px 로 정규화
  *
@@ -27,7 +29,7 @@
  * ========================================================================== */
 
 const DRY_RUN = true;          // ← 실제 생성할 때만 false 로 변경
-const SCRIPT_VERSION = '12-v1-icon-library';
+const SCRIPT_VERSION = '12-v2-icon-library-oversized-fit';
 
 const TARGET_ID = '1002:2';
 const EXPECTED_FRAME_NAME = '메인 화면 (지원 목록 및 kpi 차트)';
@@ -97,6 +99,7 @@ function pathDataOf(n) {
     return n.vectorPaths.map(p => String(p.data || '')).join(' ');
   } catch (e) { return null; }
 }
+function commandSeqOf(pd) { return pd ? (pd.match(/[A-Za-z]/g) || []).join('') : null; }
 function insideTarget(n) {
   let cur = n, i = 0;
   while (cur && i < 30) { if (cur.id === TARGET_ID) return true; cur = cur.parent; i++; }
@@ -127,6 +130,10 @@ for (const icon of ICONS) {
     insideMainFrame: found ? insideTarget(n) : null,
     parentName: found && n.parent ? n.parent.name : null,
     fitsCanvas: found ? (n.width <= CANVAS && n.height <= CANVAS) : null,
+    wouldResize: found ? (Math.max(n.width, n.height) > CANVAS) : null,
+    predictedSize: found && Math.max(n.width, n.height) > CANVAS
+      ? (function () { const k = CANVAS / Math.max(n.width, n.height); return r2(n.width * k) + '×' + r2(n.height * k); })()
+      : (found ? r2(n.width) + '×' + r2(n.height) : null),
     use: icon.use, phase: icon.phase
   });
 }
@@ -141,8 +148,8 @@ if (missing > 0) {
 
 const oversized = sourceReport.filter(s => s.fitsCanvas === false);
 if (oversized.length) {
-  notes.push('캔버스 16 을 넘는 글리프: ' + oversized.map(o => o.name + '(' + o.size + ')').join(', ') +
-             ' — 원본 크기를 유지하면 캔버스 밖으로 나간다. clipsContent 를 끄므로 잘리지는 않지만 확인 필요.');
+  notes.push('캔버스 16 초과 글리프 → 비례 축소 대상: ' +
+             oversized.map(o => o.name + ' ' + o.size + ' → ' + o.predictedSize).join(' / '));
 }
 
 /* ========================================================================
@@ -165,6 +172,9 @@ if (DRY_RUN) {
     canvas: CANVAS + '×' + CANVAS,
     dotSize: DOT_SIZE + '×' + DOT_SIZE,
     glyphPolicy: '원본 크기 유지 · 캔버스 중앙 정렬 · vectorPaths 보존 · 인스턴스 리사이즈 안 함',
+    oversizedPolicy: 'max(w,h) > ' + CANVAS + ' 인 글리프만 비율 유지 비례 축소(rescale)로 최장변을 정확히 ' + CANVAS + ' 로 맞춘다',
+    wouldResizeIcons: sourceReport.filter(s2 => s2.wouldResize).map(s2 => ({ name: s2.name, from: s2.size, to: s2.predictedSize })),
+    wouldKeepOriginalSize: sourceReport.filter(s2 => s2.wouldResize === false).map(s2 => s2.name),
     placement: { originX, originY, cols: GRID_COLS, pitch: GRID_PITCH },
     writesToMasters: '없음 — 기존 마스터 9종은 이름 충돌 검사 외에 조회하지 않는다',
     writesToMainFrame: '없음 — clone 은 곧바로 컴포넌트로 옮기고, 부모 자식 수를 복제 전후로 대조한다',
@@ -219,6 +229,17 @@ for (let i = 0; i < ICONS.length; i++) {
       glyph = dot;
     }
 
+    // 최장변이 캔버스를 넘으면 비율 유지 비례 축소 (rescale 은 획 두께까지 함께 줄인다)
+    const beforeW = glyph.width, beforeH = glyph.height;
+    const aspectBefore = beforeH > 0 ? beforeW / beforeH : null;
+    let didResize = false;
+    const maxDim = Math.max(beforeW, beforeH);
+    if (maxDim > CANVAS) {
+      try { glyph.rescale(CANVAS / maxDim); didResize = true; }
+      catch (e) { errors.push(icon.name + ' rescale 실패: ' + e.message); }
+    }
+    const aspectAfter = glyph.height > 0 ? glyph.width / glyph.height : null;
+
     // 중앙 정렬 (컴포넌트가 auto layout 이 아니므로 좌표로 배치한다)
     glyph.x = r2((CANVAS - glyph.width) / 2);
     glyph.y = r2((CANVAS - glyph.height) / 2);
@@ -230,10 +251,21 @@ for (let i = 0; i < ICONS.length; i++) {
       name: comp.name, id: comp.id,
       canvas: r2(comp.width) + '×' + r2(comp.height),
       glyphSize: r2(glyph.width) + '×' + r2(glyph.height),
+      glyphSizeBefore: r2(beforeW) + '×' + r2(beforeH),
       glyphPos: r2(glyph.x) + ',' + r2(glyph.y),
+      resized: didResize,
       centered: Math.abs(glyph.x - (CANVAS - glyph.width) / 2) < 0.5 &&
                 Math.abs(glyph.y - (CANVAS - glyph.height) / 2) < 0.5,
-      pathPreserved: icon.src ? (sourcePath === clonedPath) : null,
+      fitsCanvas: glyph.width <= CANVAS + 0.01 && glyph.height <= CANVAS + 0.01,
+      maxDimension: r2(Math.max(glyph.width, glyph.height)),
+      // 크기를 바꾸지 않은 15개: 경로 문자열이 완전히 같아야 한다
+      pathPreserved: (icon.src && !didResize) ? (sourcePath === clonedPath) : null,
+      // 축소한 2개: 문자열은 달라져도 되고, 비율과 위상(명령 구성)이 유지되면 된다
+      aspectBefore: aspectBefore === null ? null : r2(aspectBefore),
+      aspectAfter: aspectAfter === null ? null : r2(aspectAfter),
+      aspectPreserved: (aspectBefore && aspectAfter) ? Math.abs(aspectBefore - aspectAfter) < 0.01 : null,
+      topologyPreserved: (icon.src && didResize)
+        ? (commandSeqOf(sourcePath) === commandSeqOf(clonedPath)) : null,
       source: icon.src
     });
     comps.push(comp);
@@ -261,8 +293,28 @@ for (const pid of Object.keys(parentCountBefore)) {
 
 const allCanvas16 = created.every(c => c.canvas === CANVAS + '×' + CANVAS);
 const allCentered = created.every(c => c.centered);
-const allPathsPreserved = created.every(c => c.pathPreserved !== false);
+const allFitCanvas = created.every(c => c.fitsCanvas);
 const mainFrameIntact = parentCheck.every(p => p.ok);
+
+const resizedIcons = created.filter(c => c.resized).map(c => c.name);
+const unresized = created.filter(c => !c.resized && c.source);
+const resized = created.filter(c => c.resized);
+
+// 일반 15개: vectorPaths 문자열 완전 보존
+const pathsPreservedForUnresized = unresized.every(c => c.pathPreserved === true);
+// 축소 2개: 비율 + 위상 유지, 최장변 16 이하
+const aspectPreservedForResized = resized.every(c => c.aspectPreserved === true);
+const topologyPreservedForResized = resized.every(c => c.topologyPreserved === true);
+const resizedFitExactly = resized.every(c => Math.abs(c.maxDimension - CANVAS) < 0.05);
+// 축소는 oversized 였던 것만
+const expectedResize = sourceReport.filter(s2 => s2.wouldResize).map(s2 => s2.name).sort().join('|');
+const onlyOversizedWereResized = resizedIcons.slice().sort().join('|') === expectedResize;
+
+if (!pathsPreservedForUnresized) errors.push('크기를 바꾸지 않은 아이콘 중 경로가 달라진 것이 있음');
+if (!aspectPreservedForResized) errors.push('축소한 아이콘의 종횡비가 바뀜');
+if (!topologyPreservedForResized) errors.push('축소한 아이콘의 경로 위상(명령 구성)이 바뀜');
+if (!onlyOversizedWereResized) errors.push('의도하지 않은 아이콘이 축소됨: ' + resizedIcons.join(', '));
+if (!allFitCanvas) errors.push('캔버스를 넘는 글리프가 남아 있음');
 
 if (created.length !== ICONS.length) errors.push('생성된 컴포넌트가 ' + created.length + '개로 기대치 ' + ICONS.length + ' 와 다름');
 
@@ -275,8 +327,14 @@ return out({
   created,
   allCanvas16,
   allCentered,
-  allPathsPreserved,
+  allFitCanvas,
   mainFrameIntact,
+  resizedIcons,
+  onlyOversizedWereResized,
+  pathsPreservedForUnresized,
+  aspectPreservedForResized,
+  topologyPreservedForResized,
+  resizedFitExactly,
   parentCheck,
   createdNodeIds: comps.map(c => c.id),
   placement: { originX, originY, cols: GRID_COLS, pitch: GRID_PITCH },
