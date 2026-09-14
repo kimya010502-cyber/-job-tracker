@@ -400,3 +400,37 @@ Select chevron 과 Chip·Button leading 은 12×12 유지 — 역할이 다르�
 카드가 12장인 것은 오류가 아니다. **첫 viewport 에 4열 × 2행 = 8장이 온전히 보이고, 3행 상단이 살짝 보여
 "아래에 더 있다"는 스크롤 affordance 를 주는 구조**다. 3행 4장을 삭제하지 않는다.
 다만 푸터의 "총 20개 중 1-8 표시" 문구는 이 구조와 맞지 않으므로 레이아웃 단계에서 따로 고친다.
+
+---
+
+## 10. 8단계 완료 — Status Indicator / Icon Button / Application Card (2026-09-14)
+
+| 컴포넌트 | id | 구성 |
+|---|---|---|
+| `Status Indicator` | — | state = inProgress / ended. outer 18×18(soft) + inner dot 10×10(strong). **effect 미사용** |
+| `Icon Button` | — | 24×24 고정, ghost, radius/sm(4), icon 슬롯 12×12 |
+| `Application Card` | `1037:2163` | state = inProgress / ended. **실측 높이 219px 확정** |
+
+Application Card 는 직속 자식 3개(header / info / footer)로 래퍼 2겹을 제거했고,
+인스턴스 7개(Chip ×4, Status Indicator ×1, Icon Button ×2)를 재사용한다. absolute 0건.
+
+### 219px 의 근거
+
+```
+1(top stroke) + 16 + 24(header) + 128(info) + 33(footer) + 16 + 1(bottom stroke) = 219
+```
+
+루트의 `border/subtle` 1px 이 **`strokesIncludedInLayout = true`** 상태라 상하 2px 이
+레이아웃 높이에 포함된다. 216 추정치와의 차이는 이 2px 과 footer 실측(33) 때문이며,
+**content hug 실측값 219 가 정상값**이다. 특정 숫자에 맞추지 않는다.
+
+### 이 단계에서 겪은 검증 오판 2건 (컴포넌트는 모두 정상이었다)
+
+1. `nestedHug = false` — `counterAxisSizingMode` 는 프레임 방향에 따라 뜻이 다르다.
+   `info` 는 VERTICAL 이라 그 속성이 **폭**을 뜻하고, 가로 FILL 이므로 FIXED 가 정답이다.
+   판정을 방향 무관한 `layoutSizingVertical === 'HUG'` 로 바꿔 해결했다.
+2. `breakdownMatchesHeight = false` — 손으로 쓴 공식과 비교하던 것을 **자식 y 좌표에서
+   유도**하도록 바꿨다. 남는 값(residual)이 곧 미설명분이 되어 stroke 2px 이 드러났다.
+
+교훈: 실측이 기대와 다를 때 **컴포넌트를 고치기 전에 검증식을 먼저 의심**한다.
+두 번 모두 원인은 검증 코드였다.
