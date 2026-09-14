@@ -320,3 +320,51 @@ Gothic A1 기반 텍스트 스타일 8개를 **그대로 사용**한다. 지금 
 ### 되돌리기
 
 백업 프레임 `1019:2` / Figma 버전 기록 / Ctrl+Z — 셋 다 유효.
+
+---
+
+## 8. 3단계 Chip 컴포넌트화 완료 (2026-09-14)
+
+`docs/figma-scripts/02-chip-component.js` APPLY 실행. `errorCount: 0`, `notes: []`.
+
+### 생성 결과
+
+| 항목 | 값 |
+|---|---|
+| 컴포넌트 세트 | `Chip` — `1029:1984` (배치 x 19645, y −491) |
+| variant | 5종, **전부 height 24** (`allHeight24: true`) |
+| 신규 토큰 | `warning/soft #FDF1DE`, `warning/strong #B8790F` |
+
+| variant | id | 크기 | bg | text |
+|---|---|---|---|---|
+| `tone=neutral` | `1029:1969` | 52 × 24 | `surface/subtle` | `text/secondary` |
+| `tone=brand` | `1029:1972` | 64 × 24 | `brand/surface` | `brand/strong` |
+| `tone=success` | `1029:1975` | 67 × 24 | `success/soft` | `success/strong` |
+| `tone=danger` | `1029:1978` | 52 × 24 | `danger/soft` | `danger/strong` |
+| `tone=waiting` | `1029:1981` | 67 × 24 | `warning/soft` | `warning/strong` |
+
+**`notes`가 비어 있다는 것은 `setBoundVariable` 이 전부 성공했다는 뜻**이다. padding(space/4, space/8), itemSpacing, 네 모서리 radius(radius/full)가 숫자가 아니라 변수로 연결되어 있다.
+
+### 구조
+
+- Auto Layout HORIZONTAL, hug, 세로 중앙 정렬
+- padding 4 / 8 (변수 바인딩), itemSpacing 4
+- radius pill (`radius/full`)
+- 자식: `leading` 프레임 12×12 (**visible = false**) + `label` 텍스트(Chip 스타일)
+
+`leading` 은 아이콘·dot 이 붙는 배지 15개(단계 수 12, KPI 델타 1, 시즌 1, 동기화 1)를 11단계에서 인스턴스로 교체할 때 오버라이드로 켜서 쓴다. 숨김 상태라 기본 모양과 24px 높이에는 영향이 없다.
+
+### Color 토큰 현황 — 19종
+
+기존 17종 + `warning/soft` + `warning/strong`.
+앱 코드(`styles.css`)의 `--waiting: #b8790f` / `--waiting-bg: #fdf1de` 와 값이 일치하므로, 앱과 Figma의 '결과 대기' 상태 색이 같아졌다.
+
+### 컨트롤 높이와 spacing scale 충돌 — 해법
+
+Chip 24 는 padding 4(스케일 값) + line-height 16 으로 떨어져 문제가 없었다.
+그러나 **Button / Select / Input 36** 은 `Label` 13/18 기준 padding 9 가 필요해 스케일(2·4·6·8·12…)에 없다.
+
+→ **세로 padding 대신 고정 높이 + 세로 중앙 정렬로 해결한다.**
+컨트롤은 `height = 36` 고정, 가로 padding 12(스케일 값), `counterAxisAlignItems = 'CENTER'`.
+이러면 확정값 36을 정확히 지키면서 스케일 밖 padding 값을 만들지 않는다. Pagination 32 도 32×32 고정으로 동일하게 처리한다.
+(칩은 콘텐츠 hug, 컨트롤은 고정 높이 — 역할이 달라 일관성에 어긋나지 않는다.)
