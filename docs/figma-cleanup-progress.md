@@ -2,7 +2,8 @@
 
 - 대상 파일: `줍줍 레퍼런스` (fileKey `hILvufkI04JInvPtCCf1L1`), Page 1
 - 작업일: 2026-09-14
-- 상태: **10단계 중 2단계까지 완료, 3단계 진행 중 중단** (Figma MCP 호출 한도)
+- 상태: **13단계 중 1·2단계 APPLY 완료** (§7 참고). 3단계(Chip 컴포넌트화) 대기
+- 실행 경로: Figma MCP 호출 한도 소진 → **Scripter 플러그인에서 스크립트 직접 실행**으로 전환
 - 코드 반영: **하지 않음** (요청대로)
 
 ---
@@ -265,3 +266,57 @@ Gothic A1 기반 텍스트 스타일 8개를 **그대로 사용**한다. 지금 
 3. **다음 결제 주기까지 대기** — 단, 위 사유로 월 20회로는 완주가 어렵다
 
 카드 높이 재산정(§4-3)은 Application Card 컴포넌트 생성 **이전**에 샘플 카드로 확인해야 컴포넌트를 두 번 만들지 않는다.
+
+---
+
+## 7. 1·2단계 APPLY 완료 (2026-09-14)
+
+`docs/figma-scripts/01-text-style-mapping-and-tokens.v4.js` 를 Scripter에서 `DRY_RUN = false` 로 실행.
+**계획(`*WouldApply`)과 실제(`*Applied`)가 전 항목 일치, `errorCount: 0`.**
+
+### 적용 결과
+
+| 항목 | 결과 |
+|---|---|
+| 텍스트 스타일 적용 | **177개** (Page title 1 · Section title 2 · Card title 12 · Body 2 · Label 13 · Caption 87 · Chip 56 · KPI number 4) |
+| Abel / Inter 잔존 | **0** (`remainingNonGothicA1: {}`) — 적용 전 Abel 123 + Inter 54 |
+| fill 변수 바인딩 | **333개** / 토큰 16종 |
+| stroke 바인딩 | **24개** (카드 보더 12 + 카드 내부 구분선 12) |
+| 이펙트 스타일 | **35개** (card 20 · focus-ring 12 · floating 3) |
+| 외부 변수 의존 제거 | **1건** — `Accents/Indigo` → 로컬 `brand/primary` |
+| 신규 변수 | `text/on-brand`, `surface/page` |
+| scope 변경 | `neutral/300` 에 `TEXT_FILL` 추가 |
+| 스캔 노드 | 737 |
+
+### 토큰별 바인딩 수
+
+`text/muted` 93 · `text/secondary` 68 · `text/primary` 46 · `surface/subtle` 45 · `brand/strong` 27 · `surface/default` 21 · `brand/surface` 13 · `success/strong` 4 · `neutral/300` 3 · `danger/strong` 3 · `brand/primary` 2 · `text/on-brand` 2 · `success/soft` 2 · `danger/soft` 2 · `surface/header` 1 · `surface/page` 1
+
+### 최종 Color 토큰 (17종)
+
+기존 15종 + `text/on-brand`(#ffffff) + `surface/page`(#f8f9ff 100%).
+`surface/page`와 `surface/header`는 같은 hex지만 opacity·역할이 달라 별도 semantic token으로 분리했다.
+
+**폐기 확정 색** — `#4f46e5` `#dce9ff` `#e5eeff` `#6cf8bb`(배경 용도) `rgba(108,248,187,.6)` `#ffdad7` `#930013` `#006c49`
+
+### 의도적으로 손대지 않은 노드 (예외 목록)
+
+| 노드 | 사유 |
+|---|---|
+| `1002:469` Header | effects가 2개(DROP_SHADOW + BACKGROUND_BLUR). 이펙트 스타일을 적용하면 backdrop blur 12px이 사라지므로 제외. **레이아웃 단계에서 별도 처리 필요** |
+
+그 외 예외는 없다. `skippedStroke` 0건, `unmappedNotable` 0건.
+
+### 드라이런이 실제로 막은 사고 2건
+
+1. **v1의 stroke 무조건 바인딩** — 실제로는 24개 전부 정상 보더여서 피해가 없었겠지만, 검증 없이 실행했다면 확인할 방법이 없었다. 지금은 "확인된 안전"이다.
+2. **v2의 `#f8f9ff` hex 단독 매핑** — 본문 배경 `1002:3 Main`(1024×1024, 불투명)이 80% 토큰에 묶여 배경이 비쳐 보일 뻔했다. v3에서 발견, v4에서 `surface/page` 신설로 해결.
+
+### 현재 화면 상태 (예정된 중간 상태)
+
+폰트 크기 변경(Caption·Chip 11→12, 사이드바 활성 16→13, 로고 21.33→20)으로 Auto Layout이 리플로우됐다.
+**KPI 델타 배지 4개는 absolute 배치라 따라오지 않아 수치와 겹칠 수 있다.** 12단계(Auto Layout 기반 레이아웃 수정)에서 정리한다.
+
+### 되돌리기
+
+백업 프레임 `1019:2` / Figma 버전 기록 / Ctrl+Z — 셋 다 유효.
