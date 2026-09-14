@@ -41,7 +41,7 @@
  * ========================================================================== */
 
 const DRY_RUN = true;          // ← 실제 수정할 때만 false 로 변경
-const SCRIPT_VERSION = '13-v3-chip-leading-swap-stray-tracking';
+const SCRIPT_VERSION = '13-v4-chip-leading-swap-mutation-kinds';
 
 const CHIP_SET_ID = '1029:1984';
 const CHIP_SET_NAME = 'Chip';
@@ -183,11 +183,13 @@ if (DRY_RUN) {
     },
     partialMutationPlan: {
       atomic: false,
-      firstMutatingStep: 'createInstance — Figma 는 createInstance() 결과를 현재 페이지에 붙인다. 이 시점부터 문서가 바뀐다.',
+      firstMutatingStep: 'addComponentProperty — Chip 세트에 INSTANCE_SWAP 속성이 추가되는 시점부터 문서가 변경된다',
+      secondMutatingStep: 'createInstance — Figma 는 createInstance() 결과를 현재 페이지에 붙이므로 여기서도 문서가 바뀐다',
       stepsInOrder: [
-        '1. addComponentProperty (세트에 1회) — 여기서 실패하면 variant 는 그대로다',
+        '1. addComponentProperty (세트에 1회) ← **첫 mutation**. 성공하면 이미 Chip 세트가 바뀐 상태다',
         '2. findLeading (variant 별, 읽기)',
         '3. createInstance ← 페이지에 인스턴스가 생긴다 (실패 시 미아 노드 가능)',
+
         '4. insertChild ← variant 가 바뀐다',
         '5. resize / 6. setVisible / 7. propertyReference',
         '8. removeOldFrame ← 빈 FRAME 제거'
@@ -195,6 +197,11 @@ if (DRY_RUN) {
       trackedInApply: ['propertyCreated', 'variantsAttempted', 'variantsCompleted',
                        'modifiedVariantIds', 'strayInstanceIds', 'failedAt', 'failures', 'partialMutationDetected'],
       strayHandling: '3 과 4 사이에서 실패하면 variant 에 들어가지 못한 인스턴스가 페이지에 남는다. strayInstanceIds 로 보고하니 그 id 를 지우면 된다.',
+      partialStates: [
+        'propertyCreated=true / variantsCompleted=0 → 속성만 추가된 partial mutation (partialMutationKind: propertyOnly)',
+        'variantsCompleted 가 1~4 → 일부 variant 까지 수정된 partial mutation (someVariants)',
+        'strayInstanceIds.length > 0 → 미아 인스턴스 존재 (strayInstances)'
+      ],
       onFailure: 'Ctrl+Z 로 되돌린 뒤 failedAt.step 을 보고 원인을 확인한다. 화면 백업 1044:47 로는 마스터 수정을 되돌릴 수 없다.'
     },
     deletions: '각 variant 의 빈 leading FRAME 5개만 제거한다. 그 외 삭제 없음.',
@@ -308,9 +315,18 @@ const refsOk = applied.every(a => !!a.propRef);
 const paddingOk = applied.every(a => a.paddingAfter === '4/8/4/8');
 const gapOk = applied.every(a => Math.abs(a.itemSpacingAfter - 4) < 0.01);
 const allFive = applied.length === chipSet.children.length;
-const partialMutationDetected = (modifiedVariantIds.length > 0 && applied.length < attempted) || strayInstanceIds.length > 0;
+const propertyCreatedThisRun = !existingPropKey;
+// 속성만 추가되고 variant 를 하나도 못 바꾼 경우도 partial mutation 이다.
+// v3 는 modifiedVariantIds 가 비어 있다는 이유로 이 상태를 놓쳤다.
+const partialMutationKind = [];
+if (propertyCreatedThisRun && applied.length === 0) partialMutationKind.push('propertyOnly');
+if (applied.length > 0 && applied.length < attempted) partialMutationKind.push('someVariants');
+if (strayInstanceIds.length > 0) partialMutationKind.push('strayInstances');
+const partialMutationDetected = partialMutationKind.length > 0;
 if (partialMutationDetected) {
-  errors.push('중간 실패 — ' + modifiedVariantIds.length + '개 variant 가 바뀐 상태로 멈췄다. Ctrl+Z 로 되돌린 뒤 원인을 확인할 것.');
+  errors.push('중간 실패 [' + partialMutationKind.join(', ') + '] — 속성생성=' + propertyCreatedThisRun +
+              ', 완료 variant=' + applied.length + '/' + attempted +
+              ', 미아 인스턴스=' + strayInstanceIds.length + '. Ctrl+Z 로 되돌린 뒤 원인을 확인할 것.');
 }
 
 if (!heightsOk) errors.push('높이 24 가 아닌 variant 있음');
@@ -328,7 +344,7 @@ return out({
   aborted: false,
   chipSetId: chipSet.id,
   propertyKey: propKey,
-  propertyCreated: !existingPropKey,
+  propertyCreated: propertyCreatedThisRun,
   variantsAttempted: attempted,
   variantsCompleted: applied.length,
   modifiedVariantIds,
@@ -336,6 +352,7 @@ return out({
   failedAt: failures.length ? failures[0] : null,
   failures,
   partialMutationDetected,
+  partialMutationKind,
   applied,
   heightsOk, slotsOk, hiddenOk, instancesOk, refsOk, paddingOk, gapOk, allFive,
   nextVerification: ['13b (Chip 자체)', '05b (KPI Card 높이 86)', '06b (Application Card 높이 219)'],
