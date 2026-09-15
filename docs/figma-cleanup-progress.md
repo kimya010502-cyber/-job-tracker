@@ -1468,3 +1468,39 @@ caption 이 높이를 바꾸면 "감사의 전제(가로 footer row 안이라 �
 DRY_RUN · APPLY 4장 전부 · caption hide/set 되읽기 · FILL 적용 ·
 3번째 카드에서 삽입 실패 시 `completedTargets ["c1","c2"]` / `targetsNotStarted ["c4"]` /
 `stoppedAt c3` / `c3InstanceCreatedNotInserted` + 미아 1개 / VERIFY 통과.
+
+### 19-v2 — sizing 요구를 반쪽만 검사하던 문제 + 높이 preflight
+
+#### layoutGrow 실패를 note 로만 남겼다
+
+v1 은 `layoutGrow = 1` 설정이 실패하면 note 만 남기고 넘어갔고,
+`sizingSet` 은 `layoutSizingHorizontal === 'FILL'` 하나만 봤다.
+그래서 실제 상태가 **FILL / grow 0** 인데 `successCriteriaMet = true` 가 될 수 있었다.
+
+Phase D 의 sizing 요구는 **FILL 그리고 grow 1** 이다. 둘 다 조건으로 올렸다.
+
+- `layoutGrow` 설정 실패 → `throw`
+- `sizingFillOk` · `layoutGrowOk` 를 따로 되읽고 하나라도 다르면 중단
+- `sizingSet = sizingFillOk && layoutGrowOk`
+- successCriteria 에 `allSizingSetToFill` · **`allLayoutGrowOne`** · `allSizingRequirementsMet` 을 각각 둔다
+- 결과에 `sizingReadBack` 표를 따로 낸다 (카드별 두 값 + 요구사항 문구)
+
+mock 에서 `layoutGrow` 를 조용히 무시하는 상황을 만들어, 첫 카드에서 멈추고
+`allLayoutGrowOne` 만 실패하고 `allSizingSetToFill` 은 통과하는 것(둘이 분리됨)을 확인했다.
+
+#### 예상 높이가 갈려도 mutation 이 시작될 수 있었다
+
+`allCardsSameHeightAfterOverrides` 를 계산해놓고 preflight 에 넣지 않았다.
+`allPredictedCardHeightsSame` 을 preflight 에 추가했다. false 면 **APPLY 를 시작하지 않는다.**
+
+#### strip 높이 조건은 86 을 박지 않았다
+
+`predictedStripHeightMatchesDesign: near(..., 86)` 대신
+**`predictedStripHeightDerivesFromMaster`** 를 쓴다 —
+`예상 strip 높이 == 마스터 카드 높이 + strip 세로 padding` 인지 확인한다.
+
+같은 보장을 숫자 없이 얻는다. 86 을 박으면 마스터를 한 번만 손봐도
+멀쩡한 결과가 실패로 나온다. 86 은 `designReferenceHeight` 로 남기고 차이만 보고한다.
+
+mock 에서 variant 하나를 20px 높게 만들어 DRY_RUN 이
+`aborted: true` 로 멈추는 것을 확인했다.

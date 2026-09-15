@@ -27,7 +27,7 @@
  * ========================================================================== */
 
 const DRY_RUN = true;          // ← 실제 수정할 때만 false 로 변경
-const SCRIPT_VERSION = '19-v1-phaseD-kpi-replace';
+const SCRIPT_VERSION = '19-v2-phaseD-kpi-replace';
 
 const STRIP_ID = '1002:23';
 const KPI_SET_ID = '1033:2085';
@@ -221,6 +221,25 @@ if (strip) {
   };
   stripPlan.stripHeightDelta = stripPlan.predictedStripHeight === null ? null
     : r2(stripPlan.predictedStripHeight - strip.height);
+
+  /* strip 높이가 마스터에서 유도되는 값인지.
+   * 86 같은 숫자를 박아 넣지 않는다 — 마스터가 바뀌면 멀쩡한 결과가 실패로 나온다.
+   * 대신 '카드 높이 + strip 세로 padding' 으로 설명되는지를 본다. 같은 보장을 숫자 없이 얻는다. */
+  const mh = stripPlan.masterWidth !== null && plan[0] && plan[0].master ? plan[0].master.height : null;
+  stripPlan.masterCardHeight = mh;
+  stripPlan.predictedStripHeightDerivesFromMaster = (mh !== null &&
+    stripPlan.predictedStripHeight !== null)
+    ? Math.abs(stripPlan.predictedStripHeight - (mh + padV)) < 0.5 : false;
+  stripPlan.heightDerivationBasis = mh === null
+    ? '마스터 높이를 읽지 못했다'
+    : '예상 strip 높이 ' + stripPlan.predictedStripHeight + ' = 마스터 카드 높이 ' + mh +
+      ' + strip 세로 padding ' + padV + ' 인지 확인한다';
+  /* 설계 기준 86 은 **참고값** 으로만 남긴다 */
+  stripPlan.designReferenceHeight = 86;
+  stripPlan.predictedVsDesignReference = stripPlan.predictedStripHeight === null ? null
+    : r2(stripPlan.predictedStripHeight - 86);
+  stripPlan.designReferenceNote = '86 은 설계 기준 참고값이다. 통과 조건은 ' +
+    'predictedStripHeightDerivesFromMaster 이고, 마스터가 바뀌면 이 값도 따라 바뀌어야 맞다.';
   stripPlan.overflowRisk = stripPlan.widthIfMasterKept !== null &&
     !plan.every(p => p.currentSizingH === 'FILL') &&
     stripPlan.widthIfMasterKept > strip.width + 0.5;
@@ -253,6 +272,11 @@ const preflight = {
   indexesResolvable: plan.every(p => p.currentIndex >= 0),
   layoutMeasurable: !!(stripPlan && stripPlan.predictedCardWidth !== null &&
                        stripPlan.predictedStripHeight !== null),
+  /* 예상 높이가 갈리면 mutation 을 시작하지 않는다.
+   * v1 은 이 값을 계산해놓고 preflight 에 넣지 않아, 갈린 채로 APPLY 가 시작될 수 있었다. */
+  allPredictedCardHeightsSame: !!(stripPlan && stripPlan.allCardsSameHeightAfterOverrides === true),
+  predictedStripHeightDerivesFromMaster:
+    !!(stripPlan && stripPlan.predictedStripHeightDerivesFromMaster === true),
   noOverflow: !!(stripPlan && stripPlan.overflowRisk === false)
 };
 const missing = Object.keys(preflight).filter(k => !preflight[k]);
@@ -289,6 +313,8 @@ if (DRY_RUN) {
       현재크기: p.currentSize,
       현재sizing: p.currentSizingH + ' / grow ' + p.currentLayoutGrow,
       적용할sizing: p.plannedSizingHorizontal + ' / grow ' + p.plannedLayoutGrow,
+      sizing요구: 'layoutSizingHorizontal = ' + p.plannedSizingHorizontal +
+                  ' AND layoutGrow = ' + p.plannedLayoutGrow + ' — 둘 다 되읽어 확인하고 하나라도 다르면 중단',
       예상높이: p.predictedHeightAfterContentOverrides,
       기존vector: p.vectorsInsideOldBody
     })),
@@ -431,13 +457,26 @@ for (const t of TARGETS) {
     if (!rec.badgeSet) throw new Error('배지 문구가 되읽으면 다르다: ' + rec.badgeReadBack);
 
     step = 'sizing';
+    /* Phase D 의 sizing 요구는 FILL **그리고** layoutGrow 1 이다.
+     * v1 은 layoutGrow 실패를 note 로만 남겨서, FILL 만 맞으면 sizingSet 이 참이 됐다 —
+     * 실제 상태가 FILL / grow 0 인데 "전부 성공" 이라고 말할 수 있었다. */
     try { inst.layoutSizingHorizontal = CONTROL_FILL; }
     catch (e) { throw new Error('layoutSizingHorizontal 설정 실패: ' + e.message); }
-    try { inst.layoutGrow = 1; } catch (e) { notes.push(t.key + ' layoutGrow 설정 실패: ' + e.message); }
+    try { inst.layoutGrow = 1; }
+    catch (e) { throw new Error('layoutGrow 설정 실패: ' + e.message); }
+
     rec.sizingReadBack = (function () { try { return inst.layoutSizingHorizontal; } catch (e) { return null; } })();
     rec.layoutGrowReadBack = 'layoutGrow' in inst ? inst.layoutGrow : null;
-    rec.sizingSet = rec.sizingReadBack === CONTROL_FILL;
-    if (!rec.sizingSet) throw new Error('sizing 을 FILL 로 썼는데 되읽으면 ' + rec.sizingReadBack);
+    rec.sizingRequirement = 'layoutSizingHorizontal = ' + CONTROL_FILL + ' AND layoutGrow = 1';
+    rec.sizingFillOk = rec.sizingReadBack === CONTROL_FILL;
+    rec.layoutGrowOk = rec.layoutGrowReadBack === 1;
+    rec.sizingSet = rec.sizingFillOk && rec.layoutGrowOk;
+    if (!rec.sizingFillOk) {
+      throw new Error('sizing 을 FILL 로 썼는데 되읽으면 ' + rec.sizingReadBack);
+    }
+    if (!rec.layoutGrowOk) {
+      throw new Error('layoutGrow 를 1 로 썼는데 되읽으면 ' + rec.layoutGrowReadBack);
+    }
 
     step = 'hideOriginal';
     src.visible = false;
@@ -518,7 +557,9 @@ const successCriteria = {
   allCardsComplete: completedTargets.length === TARGETS.length,
   allIndexesVerified: TARGETS.every(t => !results[t.key] || results[t.key].indexVerified !== false),
   allCaptionsHandled: TARGETS.every(t => !results[t.key] || results[t.key].captionHandled !== false),
-  allSizingSetToFill: TARGETS.every(t => !results[t.key] || results[t.key].sizingSet !== false),
+  allSizingSetToFill: TARGETS.every(t => !results[t.key] || results[t.key].sizingFillOk !== false),
+  allLayoutGrowOne: TARGETS.every(t => !results[t.key] || results[t.key].layoutGrowOk !== false),
+  allSizingRequirementsMet: TARGETS.every(t => !results[t.key] || results[t.key].sizingSet !== false),
   allOriginalsHidden: TARGETS.every(t => !results[t.key] || results[t.key].originalHidden !== false),
   /* 높이를 조건에 넣지 않으면 카드가 들쭉날쭉해도 "전부 성공" 이라고 말한다 — 실제로 그랬다 */
   allCardHeightsMatchPrediction: TARGETS.every(t => !results[t.key] ||
@@ -541,6 +582,16 @@ return out({
   completedTargets, targetsNotStarted,
   stoppedAt, failedAt,
   results,
+  sizingReadBack: TARGETS.map(t => {
+    const r = results[t.key];
+    return { key: t.key,
+      sizingReadBack: r ? r.sizingReadBack : null,
+      layoutGrowReadBack: r ? r.layoutGrowReadBack : null,
+      sizingFillOk: r ? r.sizingFillOk : null,
+      layoutGrowOk: r ? r.layoutGrowOk : null,
+      sizingSet: r ? r.sizingSet : null,
+      requirement: r ? r.sizingRequirement : 'layoutSizingHorizontal = FILL AND layoutGrow = 1' };
+  }),
   stripAfter,
   strayInstanceIds,
   partialMutationKind,
