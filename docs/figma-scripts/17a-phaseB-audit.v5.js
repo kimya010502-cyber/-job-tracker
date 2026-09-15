@@ -26,7 +26,7 @@
  *   두 글자크기는 모두 실측값이다. 비례 가정만 추정이다.
  * ========================================================================== */
 
-const SCRIPT_VERSION = '17a-v4-reset-by-structure';
+const SCRIPT_VERSION = '17a-v5-coverage-and-wrapper-shrink';
 
 const TOOLBAR_ID = '1003:1695';
 
