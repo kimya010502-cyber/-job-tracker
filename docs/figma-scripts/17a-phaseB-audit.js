@@ -26,7 +26,7 @@
  *   두 글자크기는 모두 실측값이다. 비례 가정만 추정이다.
  * ========================================================================== */
 
-const SCRIPT_VERSION = '17a-v1-phaseB-audit';
+const SCRIPT_VERSION = '17a-v2-hidden-evidence-from-phase-a';
 
 const TOOLBAR_ID = '1003:1695';
 
@@ -477,40 +477,145 @@ if (!toolbarHeightImpact.formulaMatchesMeasured) {
              ') — 높이 예측을 확정값으로 쓰지 말 것');
 }
 
-/* ---------- 숨긴 자식이 자리를 차지하는가: Phase A 실측 증거 ---------- */
-const PHASE_A_PARENTS = ['1002:500', '1009:700'];
+/* ---------- 숨긴 자식이 가로 자리를 차지하는가: Phase A 실측 증거 ----------
+ * 기준점은 **Phase A 가 실제로 숨긴 원본 노드** 다. 부모 id 는 추측하지 않고
+ * 그 노드에서 거슬러 올라가 잡는다. (예상 부모 id 는 대조용으로만 쓴다)
+ *
+ *   v2.4  숨긴 원본 1002:506  새 인스턴스 1062:63
+ *   시즌  숨긴 원본 1009:703  새 인스턴스 1062:67
+ *
+ * 결과가 indeterminate 이거나 어긋나도 **어느 쪽으로도 단정하지 않는다.**
+ * 이 검사는 gate 조건이 아니다. */
+const PHASE_A_HIDDEN = [
+  { key: 'version', hiddenNodeId: '1002:506', newInstanceId: '1062:63', expectedParentId: '1002:495' },
+  { key: 'season',  hiddenNodeId: '1009:703', newInstanceId: '1062:67', expectedParentId: '1009:700' }
+];
+
 const hiddenChildEvidence = [];
-for (const pid of PHASE_A_PARENTS) {
-  const p = await figma.getNodeByIdAsync(pid);
-  if (!p) { hiddenChildEvidence.push({ parentId: pid, found: false }); continue; }
-  const info = parentInfo(p);
-  let hugsH = null;
-  try { hugsH = p.layoutSizingHorizontal === 'HUG'; } catch (e) { /* 무시 */ }
-  const e = { parentId: pid, parentName: p.name, found: true,
-              hiddenChildCount: info.hiddenChildCount, hugsHorizontally: hugsH,
-              measuredWidth: info.width,
-              contentIfHiddenExcluded: info.contentWidthIfHiddenExcluded,
-              contentIfHiddenIncluded: info.contentWidthIfHiddenIncluded };
-  if (info.hiddenChildCount === 0) {
+for (const h of PHASE_A_HIDDEN) {
+  const e = { key: h.key, hiddenNodeId: h.hiddenNodeId, newInstanceId: h.newInstanceId,
+              expectedParentId: h.expectedParentId };
+  const hn = await figma.getNodeByIdAsync(h.hiddenNodeId);
+  if (!hn) {
+    e.hiddenNodeFound = false;
     e.verdict = 'indeterminate';
-    e.reason = '이 부모에 숨긴 자식이 없어 판별할 수 없다';
+    e.reason = '숨긴 원본 ' + h.hiddenNodeId + ' 을 찾지 못했다';
+    hiddenChildEvidence.push(e);
+    continue;
+  }
+  e.hiddenNodeFound = true;
+  e.hiddenNodeName = hn.name;
+  e.hiddenNodeVisible = hn.visible;
+  e.hiddenNodeIsHidden = hn.visible === false;
+  e.hiddenNodeWidth = r2(hn.width);
+
+  const p = hn.parent;
+  if (!p) {
+    e.verdict = 'indeterminate';
+    e.reason = '숨긴 원본의 부모를 찾지 못했다';
+    hiddenChildEvidence.push(e);
+    continue;
+  }
+  e.parentId = p.id;
+  e.parentName = p.name;
+  e.parentMatchesExpected = p.id === h.expectedParentId;
+  if (!e.parentMatchesExpected) {
+    notes.push(h.key + ' 숨긴 원본의 실제 부모는 ' + p.id + ' 다 (예상 ' + h.expectedParentId + '). ' +
+               '예상 id 가 아니라 실제 부모로 계산한다.');
+  }
+
+  const cs = kids(p) || [];
+  const inLayout = cs.filter(c => c.layoutPositioning !== 'ABSOLUTE');
+  const vis = inLayout.filter(c => c.visible !== false);
+  e.visibleChildren = vis.map(c => ({ id: c.id, name: c.name, width: r2(c.width), height: r2(c.height) }));
+  e.hiddenChildren = inLayout.filter(c => c.visible === false)
+    .map(c => ({ id: c.id, name: c.name, width: r2(c.width) }));
+  e.newInstancePresentAndVisible = vis.some(c => c.id === h.newInstanceId);
+  if (!e.newInstancePresentAndVisible) {
+    notes.push(h.key + ' 새 인스턴스 ' + h.newInstanceId + ' 가 이 부모의 보이는 자식에 없다 — 부모를 다시 확인할 것');
+  }
+
+  e.parentLayoutMode = 'layoutMode' in p ? p.layoutMode : null;
+  const padH = r2((p.paddingLeft || 0) + (p.paddingRight || 0));
+  const gap = r2(p.itemSpacing || 0);
+  e.parentPaddingH = padH;
+  e.parentGap = gap;
+  e.measuredParentWidth = r2(p.width);
+  let hugsH = null;
+  try { hugsH = p.layoutSizingHorizontal === 'HUG'; } catch (err) { /* 지원 안 함 */ }
+  e.parentHugsHorizontally = hugsH;
+
+  const sum = arr => arr.reduce((a, c) => a + c.width, 0);
+  if (e.parentLayoutMode === 'HORIZONTAL') {
+    e.predictedWidthExcludingHidden = r2(sum(vis) + gap * Math.max(0, vis.length - 1) + padH);
+    e.predictedWidthIncludingHidden = r2(sum(inLayout) + gap * Math.max(0, inLayout.length - 1) + padH);
+    e.formula = '가로: 자식 폭 합 + gap × (개수−1) + 좌우 padding';
+  } else if (e.parentLayoutMode === 'VERTICAL') {
+    e.predictedWidthExcludingHidden = vis.length ? r2(Math.max.apply(null, vis.map(c => c.width)) + padH) : null;
+    e.predictedWidthIncludingHidden = inLayout.length
+      ? r2(Math.max.apply(null, inLayout.map(c => c.width)) + padH) : null;
+    e.formula = '세로: 가장 넓은 자식 + 좌우 padding';
+  } else {
+    e.predictedWidthExcludingHidden = null;
+    e.predictedWidthIncludingHidden = null;
+    e.formula = 'Auto Layout 이 아니라 내용 폭 공식이 성립하지 않는다';
+  }
+
+  const exOk = e.predictedWidthExcludingHidden !== null &&
+               Math.abs(e.predictedWidthExcludingHidden - p.width) < 0.5;
+  const inOk = e.predictedWidthIncludingHidden !== null &&
+               Math.abs(e.predictedWidthIncludingHidden - p.width) < 0.5;
+  e.excludingMatches = exOk;
+  e.includingMatches = inOk;
+
+  if (e.hiddenChildren.length === 0) {
+    e.verdict = 'indeterminate';
+    e.reason = '이 부모에 숨긴 자식이 없어 두 가설이 같은 값을 낸다';
   } else if (hugsH !== true) {
     e.verdict = 'indeterminate';
-    e.reason = '부모 폭이 hug 가 아니라 내용 폭으로 판별할 수 없다';
+    e.reason = '부모 폭이 hug 가 아니라(' + hugsH + ') 내용 폭으로 판별할 수 없다';
+  } else if (exOk && !inOk) {
+    e.verdict = 'hiddenExcluded';
+    e.reason = '측정 폭 ' + e.measuredParentWidth + ' 가 숨김 제외 값과만 맞는다';
+  } else if (inOk && !exOk) {
+    e.verdict = 'hiddenIncluded';
+    e.reason = '측정 폭 ' + e.measuredParentWidth + ' 가 숨김 포함 값과만 맞는다';
   } else {
-    const exOk = Math.abs(info.contentWidthIfHiddenExcluded - info.width) < 0.5;
-    const inOk = Math.abs(info.contentWidthIfHiddenIncluded - info.width) < 0.5;
-    e.verdict = exOk && !inOk ? 'hidden children take no space'
-      : (inOk && !exOk ? 'hidden children DO take space' : 'ambiguous');
-    e.reason = '측정 폭 ' + info.width + ' vs 숨김제외 ' + info.contentWidthIfHiddenExcluded +
-               ' / 숨김포함 ' + info.contentWidthIfHiddenIncluded;
+    e.verdict = 'indeterminate';
+    e.reason = exOk && inOk ? '두 가설이 모두 맞아 구분되지 않는다'
+      : '두 가설 모두 측정 폭을 재현하지 못한다 (제외 ' + e.predictedWidthExcludingHidden +
+        ' / 포함 ' + e.predictedWidthIncludingHidden + ' vs 측정 ' + e.measuredParentWidth + ')';
   }
   hiddenChildEvidence.push(e);
 }
-if (!hiddenChildEvidence.some(e => e.verdict === 'hidden children take no space')) {
-  notes.push('숨긴 자식이 자리를 차지하는지 이번 데이터로 단정하지 못했다. ' +
-             'Phase A 에서 부모 높이가 그대로였던 것은 세로축 증거일 뿐이다. ' +
-             'DRY_RUN 에서 툴바 폭 여유를 넉넉히 확인하고 넘어간다.');
+
+const evidenceVerdicts = hiddenChildEvidence.map(e => e.verdict);
+const decisive = evidenceVerdicts.filter(v => v !== 'indeterminate');
+const hiddenChildConclusion = {
+  verdicts: evidenceVerdicts,
+  parentsChecked: hiddenChildEvidence.length,
+  decisiveCount: decisive.length,
+  indeterminateCount: evidenceVerdicts.length - decisive.length,
+  agreed: evidenceVerdicts.filter(v => v !== 'indeterminate').length > 0 &&
+          evidenceVerdicts.filter(v => v !== 'indeterminate')
+            .every((v, i, a) => v === a[0]),
+  conclusion: null,
+  note: '이 검사는 gate 조건이 아니다. indeterminate 이거나 두 부모가 엇갈리면 ' +
+        '"공간을 차지한다/안 한다" 어느 쪽으로도 단정하지 않고, Phase B DRY_RUN 에서 ' +
+        '툴바 폭 여유가 충분한지로 안전을 확보한다.'
+};
+if (hiddenChildConclusion.agreed) {
+  hiddenChildConclusion.conclusion = decisive[0];
+  hiddenChildConclusion.support = decisive.length === hiddenChildEvidence.length
+    ? '부모 ' + decisive.length + '곳 모두에서 같은 결과'
+    : '부모 ' + decisive.length + '곳에서만 판별됨 (나머지는 판별 불가) — 근거가 하나뿐이면 그만큼만 믿을 것';
+  if (decisive.length < hiddenChildEvidence.length) {
+    notes.push('숨긴 자식 검사가 부모 ' + decisive.length + '/' + hiddenChildEvidence.length +
+               ' 곳에서만 판별됐다. 결론은 그 범위 안에서만 유효하다.');
+  }
+} else {
+  notes.push('숨긴 자식의 가로 점유 여부를 이번 데이터로 단정하지 못했다 (' +
+             evidenceVerdicts.join(', ') + '). 어느 쪽으로도 결론내지 않는다.');
 }
 
 /* ---------- 매핑 제안 (측정 기반, 결정은 사람이) ---------- */
@@ -616,6 +721,7 @@ return out({
   toolbarWidthImpact,
   toolbarHeightImpact,
   hiddenChildEvidence,
+  hiddenChildConclusion,
 
   insertionSafety,
   anyParentHasMultipleTargets,
