@@ -18,7 +18,16 @@
  *   중복 없음 · 되살아난 accessory 없음 · 페이지 미아 없음
  * ========================================================================== */
 
-const SCRIPT_VERSION = '17b-v1-phaseB-verify';
+const SCRIPT_VERSION = '17b-v2-phaseB-verify';
+
+/* 참고용 예상치 — **통과 조건이 아니다.** 실측을 기록하고 이 값과 얼마나 다른지만 보여준다.
+ * 폭을 특정 숫자로 고정하면 마스터가 조금만 바뀌어도 멀쩡한 결과가 실패로 나온다. */
+const REFERENCE_WIDTHS = {
+  input: 240,        // Input 마스터 고정 폭이라 이것만 통과 조건이다
+  reset: 66,         // ghost 62 − 마스터 라벨 54 + 라벨 38 + (아이콘 16 + gap 4)
+  resetWrapper: 70   // 위 + wrapper 좌측 padding 4
+};
+const CONTROL_HEIGHT = 36;
 
 const TOOLBAR_ID = '1003:1695';
 const TOOLBAR_EXPECTED_WIDTH = 976;
@@ -169,7 +178,34 @@ for (const t of TARGETS) {
       row.expectedSize = t.expectedSize;
       row.checks.sizeAsExpected = row.newInstanceSize === t.expectedSize;
     }
-    row.checks.heightIs36 = near(inst.height, 36);
+    row.checks.heightIs36 = near(inst.height, CONTROL_HEIGHT);
+
+    /* 부모 크기 — 세로 HUG 인 부모는 새 컨트롤 높이를 따라와야 한다 */
+    let psH = null, psV = null;
+    try { psH = parent.layoutSizingHorizontal; } catch (e) { /* 무시 */ }
+    try { psV = parent.layoutSizingVertical; } catch (e) { /* 무시 */ }
+    row.parentSize = r2(parent.width) + '×' + r2(parent.height);
+    row.parentWidth = r2(parent.width);
+    row.parentHeight = r2(parent.height);
+    row.parentSizingHorizontal = psH;
+    row.parentSizingVertical = psV;
+    if (psV === 'HUG') {
+      row.checks.parentHeightFollowsControl = near(parent.height, inst.height);
+      row.parentHeightNote = '세로 HUG 이므로 부모 높이는 새 컨트롤 높이와 같아야 한다';
+    } else {
+      row.parentHeightNote = '세로가 고정이라 부모 높이는 기록만 한다';
+    }
+    if (REFERENCE_WIDTHS[t.key] !== undefined) {
+      row.referenceWidth = REFERENCE_WIDTHS[t.key];
+      row.widthVsReference = r2(inst.width - REFERENCE_WIDTHS[t.key]);
+      row.referenceNote = t.key === 'input'
+        ? '마스터 고정 폭이라 이 값은 통과 조건이다'
+        : '참고값이다. 다르면 notes 에 남길 뿐 실패로 보지 않는다';
+      if (t.key !== 'input' && Math.abs(row.widthVsReference) > 1) {
+        notes.push(t.key + ' 실측 폭 ' + r2(inst.width) + ' 이 참고값 ' +
+          REFERENCE_WIDTHS[t.key] + ' 과 ' + row.widthVsReference + ' 만큼 다르다 (실패 아님)');
+      }
+    }
   } else {
     errors.push(t.key + ' 숨긴 원본 바로 앞에 새 인스턴스가 없다');
   }
@@ -228,7 +264,16 @@ if (rw) {
   resetWrapperCheck.size = r2(rw.width) + '×' + r2(rw.height);
   resetWrapperCheck.padding = 'paddingTop' in rw
     ? [rw.paddingTop, rw.paddingRight, rw.paddingBottom, rw.paddingLeft].map(r2).join('/') : null;
+  resetWrapperCheck.width = r2(rw.width);
+  resetWrapperCheck.height = r2(rw.height);
+  resetWrapperCheck.referenceWidth = REFERENCE_WIDTHS.resetWrapper;
+  resetWrapperCheck.widthVsReference = r2(rw.width - REFERENCE_WIDTHS.resetWrapper);
+  resetWrapperCheck.referenceNote = '참고값이다. 통과 조건은 wrapper 가 남아 있고 보이는가 하나뿐이다';
   resetWrapperCheck.checks.stillVisible = rw.visible === true;
+  if (Math.abs(resetWrapperCheck.widthVsReference) > 1) {
+    notes.push('Reset wrapper 실측 폭 ' + r2(rw.width) + ' 이 참고값 ' +
+      REFERENCE_WIDTHS.resetWrapper + ' 과 ' + resetWrapperCheck.widthVsReference + ' 만큼 다르다 (실패 아님)');
+  }
   const failed = Object.keys(resetWrapperCheck.checks).filter(k => !resetWrapperCheck.checks[k]);
   if (failed.length) errors.push('Reset wrapper 실패 항목: ' + failed.join(', '));
   resetWrapperCheck.failedChecks = failed;
@@ -260,7 +305,11 @@ if (tb) {
       ' 과 다르다 — 누가 바꿨거나 기대값 자체가 틀렸다. 둘 중 무엇인지 확인이 필요하다.');
   }
   toolbarCheck.checks.noOverflow = r2(tb.width - occupied) >= 0;
-  toolbarCheck.heightNote = '높이는 기록만 한다. 툴바 높이를 고치는 것은 이번 단계의 일이 아니다.';
+  toolbarCheck.tallestVisibleChild = vis.length ? r2(Math.max.apply(null, vis.map(c => c.height))) : 0;
+  toolbarCheck.paddingV = r2((tb.paddingTop || 0) + (tb.paddingBottom || 0));
+  toolbarCheck.heightNote = '높이는 기록만 한다. 툴바 높이를 고치는 것은 이번 단계의 일이 아니다. ' +
+    '가장 높은 자식 ' + toolbarCheck.tallestVisibleChild + ' + 세로 padding ' +
+    toolbarCheck.paddingV + ' 와 맞는지 눈으로 확인할 것.';
   const failed = Object.keys(toolbarCheck.checks).filter(k => !toolbarCheck.checks[k]);
   if (failed.length) errors.push('툴바 실패 항목: ' + failed.join(', '));
   toolbarCheck.failedChecks = failed;
@@ -306,6 +355,8 @@ const successCriteria = {
     r.checks.originalStillExists === true && r.checks.originalHidden === true),
   allAccessoriesExistAndHidden: rows.every(r =>
     r.checks.accessoriesStillExist !== false && r.checks.accessoriesHidden !== false),
+  allControlsAre36High: rows.every(r => r.checks.heightIs36 === true),
+  hugParentsFollowControlHeight: rows.every(r => r.checks.parentHeightFollowsControl !== false),
   siblingOrderAsPlanned: rows.every(r => r.checks.newInstanceImmediatelyBeforeOriginal === true),
   noDuplicates: rows.every(r => r.checks.noDuplicateUnderParent === true),
   exactlyOnePerParent: rows.every(r => r.checks.exactlyOneInstanceUnderParent === true),
@@ -328,8 +379,14 @@ return out({
   inputWrapper: inputWrapperCheck,
   resetWrapper: resetWrapperCheck,
   toolbar: toolbarCheck,
-  measuredWidths: rows.map(r => ({ key: r.key, newInstanceWidth: r.newInstanceWidth,
-                                   newInstanceSize: r.newInstanceSize })),
+  measured: rows.map(r => ({ key: r.key,
+    newInstanceSize: r.newInstanceSize, newInstanceWidth: r.newInstanceWidth,
+    newInstanceHeight: r.newInstanceHeight,
+    parentSize: r.parentSize, parentSizingHorizontal: r.parentSizingHorizontal,
+    parentSizingVertical: r.parentSizingVertical,
+    referenceWidth: r.referenceWidth, widthVsReference: r.widthVsReference })),
+  measurementNote: '폭은 실측이 기준이다. referenceWidth 는 DRY_RUN 예측을 대조하기 위한 참고값이며 ' +
+                   'Input(마스터 고정 폭) 을 빼면 통과 조건이 아니다.',
   pageStrays,
   successCriteria,
   successCriteriaMet,

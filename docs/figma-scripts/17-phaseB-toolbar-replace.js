@@ -35,7 +35,7 @@
  * ========================================================================== */
 
 const DRY_RUN = true;          // ← 실제 수정할 때만 false 로 변경
-const SCRIPT_VERSION = '17-v2-phaseB-toolbar-replace';
+const SCRIPT_VERSION = '17-v3-phaseB-toolbar-replace';
 
 const TOOLBAR_ID = '1003:1695';
 const INPUT_WRAPPER_ID = '1003:1696';
@@ -156,6 +156,53 @@ async function loadSet(setId) {
                         } catch (e) { return null; }
                       })() };
   return setCache[setId];
+}
+
+/* 부모의 교체 후 크기를 가로·세로 **둘 다** 계산한다.
+ * 숨길 자식은 레이아웃에서 빠지고, 새 인스턴스가 그 자리를 대신한다. */
+function predictParentBox(parent, hiddenIds, newW, newH) {
+  const pk = kids(parent) || [];
+  const inFlow = pk.filter(c => c.layoutPositioning !== 'ABSOLUTE' && c.visible !== false);
+  const remain = inFlow.filter(c => hiddenIds.indexOf(c.id) < 0);
+  const padH = r2((parent.paddingLeft || 0) + (parent.paddingRight || 0));
+  const padV = r2((parent.paddingTop || 0) + (parent.paddingBottom || 0));
+  const gap = r2(parent.itemSpacing || 0);
+  const mode = 'layoutMode' in parent ? parent.layoutMode : 'NONE';
+
+  let sizingH = null, sizingV = null;
+  try { sizingH = parent.layoutSizingHorizontal; } catch (e) { /* 무시 */ }
+  try { sizingV = parent.layoutSizingVertical; } catch (e) { /* 무시 */ }
+
+  const widths = remain.map(c => c.width).concat(newW === null ? [] : [newW]);
+  const heights = remain.map(c => c.height).concat(newH === null ? [] : [newH]);
+  const n = widths.length;
+  const mx = a => a.length ? Math.max.apply(null, a) : 0;
+  const sum = a => a.reduce((x, y) => x + y, 0);
+
+  let contentW = null, contentH = null, basis;
+  if (mode === 'HORIZONTAL') {
+    contentW = r2(sum(widths) + gap * Math.max(0, n - 1) + padH);
+    contentH = r2(mx(heights) + padV);
+    basis = '가로 Auto Layout — 폭은 합계, 높이는 가장 높은 자식';
+  } else if (mode === 'VERTICAL') {
+    contentW = r2(mx(widths) + padH);
+    contentH = r2(sum(heights) + gap * Math.max(0, n - 1) + padV);
+    basis = '세로 Auto Layout — 폭은 가장 넓은 자식, 높이는 합계';
+  } else {
+    basis = 'Auto Layout 이 아니다 — 자식 크기가 부모를 바꾸지 않는다';
+  }
+
+  const pw = (sizingH === 'HUG' && contentW !== null) ? contentW : r2(parent.width);
+  const ph = (sizingV === 'HUG' && contentH !== null) ? contentH : r2(parent.height);
+  return {
+    layoutMode: mode, sizingH, sizingV,
+    currentSize: r2(parent.width) + '×' + r2(parent.height),
+    contentWidth: contentW, contentHeight: contentH,
+    predictedWidth: pw, predictedHeight: ph,
+    predictedSize: pw + '×' + ph +
+      (sizingH === 'HUG' ? '' : ' (가로 고정)') + (sizingV === 'HUG' ? '' : ' (세로 고정)'),
+    basis
+  };
 }
 
 /* ========================================================================
@@ -304,25 +351,21 @@ for (const t of TARGETS) {
   }
   rec.widthDelta = rec.predictedWidth === null ? null : r2(rec.predictedWidth - rec.currentWidth);
 
-  /* 부모 예상 크기 */
+  /* 부모 예상 크기 — **높이도 새 값(36)을 반영한다.**
+   * v2 는 폭만 계산하고 높이는 기존 값을 그대로 붙여서, 새 컨트롤이 36인데 부모가 30으로 보고됐다. */
   if (parent) {
-    const pk = kids(parent) || [];
-    const inFlow = pk.filter(c => c.layoutPositioning !== 'ABSOLUTE');
-    const hiddenAfter = [t.srcId].concat(t.accessories);
-    const remain = inFlow.filter(c => hiddenAfter.indexOf(c.id) < 0);
-    const padH = r2((parent.paddingLeft || 0) + (parent.paddingRight || 0));
-    const gap = r2(parent.itemSpacing || 0);
-    let pSizing = null;
-    try { pSizing = parent.layoutSizingHorizontal; } catch (e) { /* 무시 */ }
-    rec.parentSizingHorizontal = pSizing;
-    rec.parentCurrentSize = r2(parent.width) + '×' + r2(parent.height);
-    const contentAfter = rec.predictedWidth === null ? null
-      : r2(rec.predictedWidth + remain.reduce((a, c) => a + c.width, 0) +
-           gap * Math.max(0, remain.length) + padH);
-    rec.parentContentWidthAfter = contentAfter;
-    rec.parentPredictedSize = (pSizing === 'HUG' && contentAfter !== null)
-      ? contentAfter + '×' + r2(parent.height)
-      : r2(parent.width) + '×' + r2(parent.height) + ' (고정 — 변하지 않음)';
+    const box = predictParentBox(parent, [t.srcId].concat(t.accessories),
+                                 rec.predictedWidth, rec.predictedHeight);
+    rec.parentSizingHorizontal = box.sizingH;
+    rec.parentSizingVertical = box.sizingV;
+    rec.parentLayoutMode = box.layoutMode;
+    rec.parentCurrentSize = box.currentSize;
+    rec.parentContentWidthAfter = box.contentWidth;
+    rec.parentContentHeightAfter = box.contentHeight;
+    rec.parentPredictedWidth = box.predictedWidth;
+    rec.parentPredictedHeight = box.predictedHeight;
+    rec.parentPredictedSize = box.predictedSize;
+    rec.parentPredictionBasis = box.basis;
   }
   plan.push(rec);
 }
@@ -355,6 +398,20 @@ if (inputWrapper && inputPlan && inputPlan.predictedWidth !== null) {
     why: 'wrapper 가 FIXED ' + r2(inputWrapper.width) + ' 인데 교체 후 in-flow 내용은 새 Input 하나뿐이다. ' +
          '폭을 깎는 게 목적이 아니라 wrapper sizing 을 내용과 맞추는 것이다.'
   };
+  /* 두 단계다. 교체 직후에는 폭이 아직 FIXED 249 이고, 마지막 HUG 전환에서 240 이 된다. */
+  const boxAfterReplace = predictParentBox(inputWrapper, ['1003:1697'].concat(inputPlan.accessoryIdsToHide),
+                                           inputPlan.predictedWidth, inputPlan.predictedHeight);
+  wrapperPlan.stageAfterReplacement = {
+    what: '컴포넌트 교체 직후 (아직 FIXED)',
+    size: r2(inputWrapper.width) + '×' + boxAfterReplace.predictedHeight,
+    widthStillFixedAt: r2(inputWrapper.width),
+    heightFollowsNewControl: boxAfterReplace.sizingV === 'HUG'
+  };
+  wrapperPlan.stageAfterHug = {
+    what: 'HUG 전환 후',
+    size: wrapperPlan.predictedWidth + '×' + boxAfterReplace.predictedHeight
+  };
+  wrapperPlan.predictedHeight = boxAfterReplace.predictedHeight;
   wrapperPlan.recoveredWidth = r2(inputWrapper.width - wrapperPlan.predictedWidth);
 }
 
@@ -411,6 +468,41 @@ if (toolbar) {
     collisionRiskMedian: r2(toolbar.width - after) < 0,
     toolbarWidthUnchanged: true,
     note: 'collisionRisk 는 보수적 상한 기준이다. 툴바 폭은 바꾸지 않는다.'
+  };
+
+  /* 툴바 높이 — 새 컨트롤이 36 이면 가장 높은 자식이 바뀔 수 있다 */
+  const padV = r2((toolbar.paddingTop || 0) + (toolbar.paddingBottom || 0));
+  const newControlHeights = plan.map(p2 => p2.predictedHeight).filter(h => typeof h === 'number');
+  const tallestNewControl = newControlHeights.length ? Math.max.apply(null, newControlHeights) : 0;
+  /* 대상을 품지 않은 직계 자식은 높이가 그대로다 */
+  const untouched = [];
+  for (const g of vis) {
+    let holds = false;
+    for (const p2 of plan) {
+      const src = await figma.getNodeByIdAsync(p2.srcId);
+      if (src && (src.id === g.id || ancestorIds(src).indexOf(g.id) >= 0)) { holds = true; break; }
+    }
+    if (!holds) untouched.push(r2(g.height));
+  }
+  const tallestAfter = Math.max(tallestNewControl, untouched.length ? Math.max.apply(null, untouched) : 0);
+  let tbSizingV = null;
+  try { tbSizingV = toolbar.layoutSizingVertical; } catch (e) { /* 무시 */ }
+  const predictedH = r2(tallestAfter + padV);
+  const rawGrowth = r2(predictedH - toolbar.height);
+  const tol = 0.5;
+  toolbarPlan.height = {
+    measuredNow: r2(toolbar.height),
+    paddingV: padV,
+    tallestVisibleChildNow: vis.length ? r2(Math.max.apply(null, vis.map(c => c.height))) : 0,
+    tallestChildAfter: r2(tallestAfter),
+    newControlHeight: tallestNewControl,
+    heightHugs: tbSizingV === 'HUG' || toolbar.counterAxisSizingMode === 'AUTO',
+    predictedHeightAfter: predictedH,
+    tolerancePx: tol,
+    rawGrowthPx: rawGrowth,
+    effectiveGrowthPx: Math.abs(rawGrowth) <= tol ? 0 : rawGrowth,
+    toolbarActuallyGrows: (Math.abs(rawGrowth) <= tol ? 0 : rawGrowth) > 0,
+    note: '툴바 높이는 이번 단계에서 고치지 않는다. 계산해서 보고만 한다.'
   };
 }
 
@@ -500,7 +592,11 @@ if (DRY_RUN) {
       폭근거: p.widthBasis,
       예측종류: p.predictionKind,
       부모현재크기: p.parentCurrentSize,
-      부모예상크기: p.parentPredictedSize
+      부모예상크기: p.parentPredictedSize,
+      부모예상높이: p.parentPredictedHeight,
+      부모레이아웃: p.parentLayoutMode + ' / 가로 ' + p.parentSizingHorizontal +
+                   ' / 세로 ' + p.parentSizingVertical,
+      부모예측근거: p.parentPredictionBasis
     })),
     planRaw: plan,
     widthNote,

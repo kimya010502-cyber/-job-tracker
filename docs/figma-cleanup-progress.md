@@ -1083,3 +1083,40 @@ v1 은 "라벨을 새로 쓴다" 를 "문구가 바뀐다" 로 잘못 읽고 글
 DRY_RUN · APPLY 6개 전부 · 아이콘 swap · id 무시 시 key 폴백 ·
 중간 실패 시 중단(`completedTargets` 3개, `stoppedAt`, wrapper `attempted: false`) ·
 VERIFY 통과. 툴바 폭 기대값이 다를 때 검증기가 실패하는 것도 확인했다.
+
+### 17-v3 / 17b-v2 — 부모 예상 높이 수정 + Reset 폭 기준 확정
+
+#### 부모 예상 크기에 높이가 빠져 있었다
+
+v2 는 부모의 **폭만** 계산하고 높이는 기존 값을 그대로 붙였다.
+새 컨트롤이 36인데 부모가 30/32 로 보고돼서 값끼리 모순이었다. 보고값 오류다.
+
+`predictParentBox()` 로 가로·세로를 같이 계산한다.
+가로 Auto Layout 이면 폭은 합계·높이는 가장 높은 자식, 세로면 폭은 가장 넓은 자식·높이는 합계.
+`layoutSizingHorizontal` / `layoutSizingVertical` 을 각각 보고 HUG 인 축만 예측값을 쓴다.
+`parentPredictedHeight` · `parentLayoutMode` · `parentPredictionBasis` 를 결과에 드러냈다.
+
+Input wrapper 는 **두 단계**로 나눠 보고한다 —
+`stageAfterReplacement`(아직 FIXED 249×36) 와 `stageAfterHug`(240×36).
+한 값으로 뭉뚱그리면 언제 무엇이 바뀌는지 안 보인다.
+
+툴바 높이도 `tallestChildAfter + 세로 padding` 으로 계산하고
+`tolerancePx` / `rawGrowthPx` / `effectiveGrowthPx` / `toolbarActuallyGrows` 를 분리해 낸다.
+**툴바 높이는 이번 단계에서 고치지 않는다.**
+
+#### Reset 폭 66 은 스크립트가 이미 ghost 기준으로 계산하고 있었다
+
+`62 − 54 + 38 + 20 = 66`, wrapper `70`.
+17a-v5 의 82 는 primary variant 폭 78 을 쓴 값이었고, 대상은 ghost 이므로 66 이 맞다.
+스크립트는 `variants[t.variant]` 로 ghost 를 직접 읽으므로 고칠 것이 없었다.
+**17b 에도 82/86 같은 옛 값은 들어 있지 않았다.**
+
+#### 검증기는 폭을 숫자로 고정하지 않는다
+
+`REFERENCE_WIDTHS` 는 **참고값이며 통과 조건이 아니다** (Input 240 만 예외 — 마스터 고정 폭이라 확정이다).
+Reset 은 ghost variant · 라벨 · leading 구조가 맞는지 확인하고 **실측 폭을 기록**한다.
+참고값과 다르면 notes 에 남기되 실패로 보지 않는다.
+폭을 특정 숫자로 고정하면 마스터가 조금만 바뀌어도 멀쩡한 결과가 실패로 나온다.
+
+추가된 통과 조건: `allControlsAre36High`, `hugParentsFollowControlHeight`
+(세로 HUG 인 부모는 새 컨트롤 높이를 따라와야 한다).
