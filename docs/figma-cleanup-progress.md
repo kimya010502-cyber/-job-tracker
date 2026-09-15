@@ -840,3 +840,73 @@ descending 순서로 도는 방법도 되지만 "같은 부모·같은 배열" �
 
 추가로 삽입 직후 `indexOf(새 인스턴스) === 재계산 index` 와 `indexOf(원본) === index + 1` 을 확인하고
 어긋나면 거기서 멈춘다. 감사 결과의 `indexAtAuditTime` 은 **보고용이며 APPLY 에 쓰지 않는다.**
+
+### 17a-v3 — Reset 구조 탐색 + accessory sibling 분석
+
+v2 결과: `targetCount = 5`, `resetCount = 0`, 후보 0개. 여기서 멈췄다.
+
+#### Reset 을 이름으로 확정하지 않는다
+
+이전에 보였던 `1003:1728 Button:margin` / `1003:1729 Button` / `1003:1732 Container` 를
+**Reset 이라고 전제하지 않고**, 존재 여부부터 확인한 뒤 안을 전부 읽는다
+(`descendantTexts` 를 depth 12 로 수집, icon-like 자손, ancestry, fills/strokes, index, layoutPositioning).
+
+확정 규칙: 툴바 자손 중 **자손 텍스트**가 Reset 의미와 맞고 배경(fill/stroke)을 가진
+**가장 바깥쪽** 노드. 그런 노드가 정확히 하나일 때만 `resolvedId` 를 채운다.
+이름만 맞는 것은 `matchedOn: 'name'` 후보로만 올리고 **자동 확정하지 않는다.**
+
+v2 가 못 찾은 이유는 결과의 `descendantTextJoined` 에 그대로 나온다 —
+라벨이 다른 문구이거나, 아이콘 전용 버튼이라 텍스트가 없거나 둘 중 하나다.
+
+정규식을 `초기화|리셋|reset|필터 해제|전체 해제|모두 해제` 로 넓혔다.
+(heredoc 이 `\s` 의 백슬래시를 삼켜 `s*` 로 들어간 것을 발견해 고쳤다 — 정규식이 조용히 무력화돼 있었다.)
+
+#### accessory sibling — 아이콘 중복 위험
+
+각 wrapper 안에 본체 말고 `Container` 가 하나씩 더 있다.
+`parent.visibleChildCount` 가 1로 나온 것은 이들이 **ABSOLUTE** 라 레이아웃에서 빠지기 때문이다.
+
+| host | 본체 | accessory | 예상 역할 |
+|---|---|---|---|
+| Input | `1003:1697` | `1003:1700` | 검색 아이콘 |
+| Select1 | `1003:1705` | `1003:1708` | chevron |
+| Select2 | `1003:1711` | `1003:1714` | chevron |
+| Select3 | `1003:1717` | `1003:1720` | chevron |
+| Select4 | `1003:1723` | `1003:1726` | chevron |
+
+새 마스터가 이미 `Icon / Search` 와 chevron 을 품고 있으므로 그대로 두면 **아이콘이 겹친다.**
+따라서 Phase B 는 "본체 6개 교체" 가 아니라
+**본체 숨김 + accessory 숨김 + 새 인스턴스 노출** 구조가 될 수 있다.
+
+역할은 증거로만 확정한다 — 자손 텍스트 없음 + 도형 있음 + 28px 이하 + 본체 기준 방향(Input 왼쪽 / Select 오른쪽).
+하나라도 어긋나면 `roleConfident = false` 이고 **숨기지 않는다.**
+이전 감사의 예상 역할과 일치하는지(`matchesPriorExpectation`)도 같이 보고한다.
+
+#### 폭 판정을 중앙값으로 하지 않는다
+
+`freeSpaceNow` 가 3.18px 다. 툴바가 이미 거의 꽉 찼다.
+Select·Button 은 hug 추정치이므로 중앙값만 보고 안전하다고 말하면 안 된다.
+
+| 필드 | 뜻 |
+|---|---|
+| `predictedOccupiedWidthLow / High` | 라벨 폭 ±15% 범위 |
+| `freeSpaceAfterLow` | **남는 공간이 가장 적은 경우** (폭 상한 기준) — 보수적 판정용 |
+| `freeSpaceAfterHigh` | 남는 공간이 가장 많은 경우 |
+| `collisionRisk` | **`freeSpaceAfterLow` 기준.** 중앙값 기준이 아니다 |
+| `includesAllSixTargets` · `usableAsSafetyVerdict` | Reset 이 미확정이면 false — 이 값을 안전 판정에 쓰지 말라는 표시 |
+
+#### 높이 boolean 과 값이 충돌하던 문제
+
+v2 는 `heightGrowthPx = 0.5` 인데 `toolbarActuallyGrows = false` 로 나왔다.
+0.5px 허용오차를 boolean 안에 숨겨놔서 값과 판정이 어긋나 보였다. 분리했다.
+
+`tolerancePx` (0.5) · `rawGrowthPx` (실제 계산값) · `effectiveGrowthPx` (허용오차 적용) ·
+`toolbarActuallyGrows` (effective 기준). 툴바 높이는 **임의로 고치지 않는다.**
+
+#### gate
+
+`inputFound` · `selectCountIs4` · `resetResolved` · `targetCountIs6` · `allKnownTargetsScanned` ·
+`accessoryRolesResolved` · `mappingResolved` · `unexplainedExtraCountZero` ·
+`widthImpactIncludesAllSix` · `layoutImpactMeasurable`
+
+Reset 이나 accessory 역할이 미확정이면 `gatePassed = false` 를 유지한다.
