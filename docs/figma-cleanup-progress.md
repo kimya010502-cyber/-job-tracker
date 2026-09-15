@@ -1260,3 +1260,12 @@ APPLY 뒤에는 `geometryAfter` 로 **실제** x·오른쪽 끝·간격을 다�
 
 DRY_RUN · APPLY 정상 · 아이콘 swap · insertChild 실패 시 중단 +
 `instanceCreatedNotInserted` + 미아 추적 · 교체 전 상태에서 검증기 전부 실패.
+
+### Phase C 완료 (2026-09-15)
+
+`1009:709` 원본 숨김 보존 → 새 Button 인스턴스 **98×36**, x 878, 오른쪽 끝 976,
+왼쪽 형제와 간격 385. 부모 `1009:715` 976×60 유지. overflow·overlap·중복·미아 없음.
+`successCriteriaMet = true`, `errorCount = 0`.
+
+SPACE_BETWEEN 기하 예측(x 878 / 간격 385)이 실측과 일치했다.
+18a-v2 가 gap 421 을 더해 계산했던 1012 는 실제로 존재하지 않는 값이었다.
