@@ -1224,3 +1224,39 @@ v2 는 부모 내용 폭을 `자식 폭 합 + gap × (개수−1) + padding` 으
 자리가 부족하면 `note` 가 원인을 나눠서 말하고 notes 에도 남는다.
 mock 으로 정상·자리부족 두 경우를 확인했다.
 (경고 문구가 판정과 어긋나 "겹치는데 안 넘친다" 고 말하던 것도 같이 고쳤다.)
+
+## 18 / 18b) Phase C 교체 스크립트 — APPLY 전
+
+대상 1개. `1009:709` "기록 추가" → Button `1029:1997` / `variant=primary` /
+라벨 `기록 추가` / leading `Icon / Plus` 노출. accessory 없음(아이콘이 몸통 안).
+원본은 삭제하지 않고 `visible = false`.
+
+### preflight 14개
+
+대상 존재·노출 · 부모 존재 및 예상 id 일치 · Button set · primary variant ·
+leading 속성 · Icon / Plus · 라벨 일치 · **아이콘이 몸통 안인지** ·
+**형제 accessory 가 없는지** · 폭 예측 가능 · **기하 모델이 현재 배치를 재현** ·
+**SPACE_BETWEEN 재배치가 안전**.
+
+감사에서 "accessory 없음" 이라 했어도 APPLY 시점에 형제 accessory 가 보이면
+preflight 에서 걸리고, 확인 전에는 숨기지 않는다.
+
+### SPACE_BETWEEN 을 DRY_RUN 에서도 기하로 계산
+
+`itemSpacing` 을 고정 간격으로 더하지 않는다. 자식을 x 순으로 세우고
+`남는 공간 ÷ (개수−1)` 로 재배치한 뒤, **그 모델이 현재 x 좌표를 재현하는지 먼저 확인**한다.
+출력: 부모 폭·오른쪽 끝, 왼쪽 형제 오른쪽 끝, 현재/예상 x, 예상 오른쪽 끝,
+현재/예상 간격, 남는 공간, 이동량, `overlapRisk` · `overflowRisk` · `spaceBetweenReflowsSafely`.
+
+APPLY 뒤에는 `geometryAfter` 로 **실제** x·오른쪽 끝·간격을 다시 재고 겹침/넘침을 확인한다.
+
+### 폭은 기록하고 고정하지 않는다
+
+`REFERENCE = { width 98, x 878, spaceBetween 385 }` 는 **참고값이고 통과 조건이 아니다.**
+실측과의 차이는 notes 로 남긴다. Phase B 에서 예측이 16px 빗나갔지만
+실측이 기준이었고 레이아웃은 멀쩡했다 — 같은 원칙을 유지한다.
+
+### mock 으로 확인한 것
+
+DRY_RUN · APPLY 정상 · 아이콘 swap · insertChild 실패 시 중단 +
+`instanceCreatedNotInserted` + 미아 추적 · 교체 전 상태에서 검증기 전부 실패.
