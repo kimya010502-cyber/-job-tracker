@@ -970,3 +970,50 @@ Auto Layout 도 컨트롤로 보도록 고쳤다.
 `replacementPlan` 에 대상별로 `oldBodyToHide` · `oldAccessoriesToHide` · `accessoriesLeftAlone` 을 남긴다.
 역할이 확정되지 않은 accessory 는 `accessoriesLeftAlone` 으로 빠지고 **숨기지 않는다.**
 모두 삭제하지 않고 `visible = false` 로 보존한다.
+
+### 17a-v5 — coverage 분류 수정 + Input wrapper 축소 타당성
+
+#### 한 스크립트가 같은 노드에 두 결론을 내던 문제
+
+v4 는 Reset 을 구조 resolver 로 확정해놓고 `allKnownTargetsScanned = false` 를 냈다.
+모양 스캐너에 안 잡혔다는 이유였는데, **ghost 버튼이 모양 스캔에 안 걸리는 건 결함이 아니라 그 버튼의 성질이다.**
+`scannedAsControl` 또는 `independentlyResolvedByStructure` 중 하나면 coverage 로 인정하도록 고쳤다.
+
+같은 종류의 모순이 하나 더 있었다. `1003:1728` 을 `resetRoles` 에서 "A. wrapper / margin" 이라 판정해놓고
+`extras` 에서는 "정체 불명" 으로 다시 올렸다. 한 스크립트 안에서 같은 노드에 두 결론을 내는 것이 진짜 오류다.
+`resetRoles` · `resetWrapperStrategy` 에서 이미 설명된 노드와, 알려진 대상을 감싸는 wrapper 는
+설명된 extra 로 분류한다.
+
+#### Input wrapper 폭 문제
+
+`1003:1697` 은 249 → 240 으로 9px 줄지만, 부모 `1003:1696 Left: Search Box` 가 **FIXED 249** 라
+그 절약분이 툴바로 전달되지 않는다. 툴바는 `freeSpaceAfter` 가 음수다.
+
+목적은 "9px 확보" 가 아니라 **wrapper sizing 을 새 Input 구조와 일치시키는 것** 이다.
+교체 후 이 wrapper 의 in-flow 내용은 240짜리 새 Input **하나뿐** 이다
+(기존 본체는 숨김, 기존 검색 아이콘은 ABSOLUTE 이면서 숨김).
+
+| | A. width 를 240 FIXED | B. sizing 을 HUG |
+|---|---|---|
+| 변경량 | 속성 1개 (width) | 속성 1개 (sizing mode) |
+| 장점 | 현재 sizing 모드를 그대로 둠 | 내용과 일치. 내용이 바뀌면 알아서 맞춰짐 |
+| 단점 | 죽은 여백이 생기는 구조는 그대로 | FILL(layoutGrow=1) 자식이 있으면 충돌 |
+| **되돌리기** | wrapper 가 240 에 고정돼 249 원본이 넘친다 | **원본을 되살리면 자동으로 249 복귀** |
+
+FILL 자식이 없으면 **B 를 추천**한다. 되돌리기에서 갈린다.
+
+안전성은 계산으로 확인한다 — overflow, ABSOLUTE 자식의 오른쪽 끝이 새 폭을 넘는지,
+`clipsContent` 와 겹치는지, `STRETCH`/`SCALE` 제약 때문에 폭이 따라 변하는 자식이 있는지,
+툴바가 SPACE_BETWEEN 이라 형제 폭은 안 변하고 간격만 넓어진다는 점.
+
+#### 채택 조건
+
+`recoveredCoversShortfall` · `freeSpaceAfterCandidateNonNegative` ·
+`noCollisionConservative` · `inputFitsWithoutOverflow` · `noAbsoluteClipping`
+
+**다섯 개가 전부 참일 때만 `acceptable = true`** 다.
+`noCollisionConservative` 는 **보수적 상한** 기준이다 — 중앙값만 0을 넘겨도 채택하지 않는다.
+mock 에서 중앙값은 통과하는데 상한에서 걸리는 경우를 만들어, 그때 `acceptable = false` 가 되는지 확인했다.
+
+조건을 못 맞추면 폭을 더 깎지 않고 그 사실만 보고한다.
+툴바 폭 976 과 디자인 시스템 마스터는 건드리지 않는다.
