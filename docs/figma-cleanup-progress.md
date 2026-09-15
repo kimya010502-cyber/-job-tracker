@@ -1504,3 +1504,12 @@ mock 에서 `layoutGrow` 를 조용히 무시하는 상황을 만들어, 첫 카
 
 mock 에서 variant 하나를 20px 높게 만들어 DRY_RUN 이
 `aborted: true` 로 멈추는 것을 확인했다.
+
+### Phase D 완료 (2026-09-15)
+
+KPI 4장 모두 **235×86**, strip **976×86**, gap 12, sizing FILL, `layoutGrow` 1.
+`captionAffectsHeight = false` — caption 이 가로 footer row 안이라 높이에 영향이 없다는
+감사의 전제가 실측으로 확인됐다. overflow 없음, 미아 없음.
+`successCriteriaMet = true`, `errorCount = 0`.
+
+배지 색 정규화(`이번 달 지원` 보라 → success, `진행 중` 민트 → success)는 의도된 변경이다.
