@@ -910,3 +910,63 @@ v2 는 `heightGrowthPx = 0.5` 인데 `toolbarActuallyGrows = false` 로 나왔�
 `widthImpactIncludesAllSix` · `layoutImpactMeasurable`
 
 Reset 이나 accessory 역할이 미확정이면 `gatePassed = false` 를 유지한다.
+
+### 17a-v4 — Reset resolver 의 자기모순 수정
+
+v3 는 probes 에서 `1003:1728/1729/1732` 모두 `textMatchesReset = true` 를 찍어놓고
+최종 `candidateCount = 0` 을 냈다. **탐색 실패가 아니라 선정 조건이 스스로를 부정하고 있었다.**
+
+원인: 후보를 "배경(fill/stroke)을 가진 노드" 로 걸렀다.
+기존 Reset 은 ghost 스타일이라 fill 도 stroke 도 없다. 그래서 텍스트가 분명히 잡힌 노드를
+같은 스크립트가 전부 버렸다.
+
+**같은 편향이 `looksLikeControl` 에도 있었다** — 배경을 필수로 두어 ghost 컨트롤은
+구조 스캔에서도 통째로 빠졌다(`allKnownTargetsScanned = false` 의 원인). padding 을 가진
+Auto Layout 도 컨트롤로 보도록 고쳤다.
+
+#### 새 선정 규칙: 배경이 아니라 구조
+
+버튼 몸통 = **아이콘과 라벨을 둘 다 품은 가장 안쪽 노드.** 배경은 조건이 아니라 기록이다.
+
+| 노드 | 아이콘 | 라벨 | 판정 |
+|---|---|---|---|
+| `1003:1728` | 포함 | 포함 | **A. wrapper / margin** — 자식이 하나뿐이고 그 안에 몸통이 있다 |
+| `1003:1729` | 포함 | 포함 | **B. 실제 버튼 몸통** — 둘 다 품은 가장 안쪽 |
+| `1003:1732` | 없음 | 포함 | **C. label container** |
+
+아이콘이 아예 없는 텍스트 전용 버튼을 위해, 아이콘 조건이 실패하면
+"padding 을 가진 Auto Layout 중 가장 안쪽" 으로 넘어가는 대비책을 뒀다.
+그래도 하나로 좁혀지지 않으면 확정하지 않는다.
+
+#### Reset wrapper 전략
+
+`1003:1728` 이 **자식 1개 + 배경 없음** 이면 순수 margin 이다. 그때만 A 를 추천한다.
+
+| | A. wrapper 유지 | B. wrapper 째 숨김 |
+|---|---|---|
+| 간격 | wrapper padding 이 그대로 유지 | wrapper padding 이 사라져 간격이 바뀜 |
+| 폭 | 몸통 폭 변화만 전달 | wrapper padding 만큼 추가로 줄어듦 |
+| index | 툴바 직계 자식 순서가 **전혀** 안 바뀜 | 상위 그룹 자식이 바뀌어 다른 대상 index 에도 영향 |
+
+#### variant 판정
+
+배경색 하나가 아니라 **배경 유무 · 테두리 유무 · 각 색** 을 4종과 대조한다.
+전부 일치하는 variant 가 하나일 때만 제안하고, 0개거나 2개 이상이면 사람이 정한다고 보고한다.
+
+#### 폭 계산
+
+사용자가 제안한 직접식(`padding + icon + gap + label`)을 교차 검증용으로 넣되
+**Button 에만 적용한다.** Select 는 마스터 안에 chevron 과 그 gap 이 더 있어서 이 식으로는 모자란다.
+같은 것을 모델링하지 않는 두 식을 비교하면 없는 불일치를 만들어낸다.
+
+현재 라벨 글자크기가 새 마스터와 같으면 비례 가정이 필요 없다 —
+`predictionKind = 'measuredLabel'` 이고 상하한 밴드가 0 으로 붙는다.
+
+`collisionRisk` 가 true 면 `widthDeltaBreakdown` 이 기여도 순으로 원인을 보여준다.
+폭을 억지로 줄이지 않는다.
+
+#### 교체 계획에 accessory 포함
+
+`replacementPlan` 에 대상별로 `oldBodyToHide` · `oldAccessoriesToHide` · `accessoriesLeftAlone` 을 남긴다.
+역할이 확정되지 않은 accessory 는 `accessoriesLeftAlone` 으로 빠지고 **숨기지 않는다.**
+모두 삭제하지 않고 `visible = false` 로 보존한다.
