@@ -1017,3 +1017,55 @@ mock 에서 중앙값은 통과하는데 상한에서 걸리는 경우를 만들
 
 조건을 못 맞추면 폭을 더 깎지 않고 그 사실만 보고한다.
 툴바 폭 976 과 디자인 시스템 마스터는 건드리지 않는다.
+
+## 17 / 17b) Phase B 교체 스크립트 — APPLY 전
+
+### 대상 6개 + accessory 5개
+
+| | 본체 | accessory | 새 변형 | 라벨 | leading |
+|---|---|---|---|---|---|
+| Input | `1003:1697` | `1003:1700` | `state=default` | 기업명, 직무 검색 | `Icon / Search` 노출 |
+| Select1 | `1003:1705` | `1003:1708` | `state=default` | 지원 상태: 전체 | — |
+| Select2 | `1003:1711` | `1003:1714` | `state=default` | 전형 상태: 전체 | — |
+| Select3 | `1003:1717` | `1003:1720` | `state=default` | 현재 단계: 전체 | — |
+| Select4 | `1003:1723` | `1003:1726` | `state=default` | 포지션: 전체 | — |
+| Reset | `1003:1729` | — | `variant=ghost` | 초기화 | `Icon / Reset` 노출 |
+
+accessory 는 새 마스터가 같은 아이콘을 품고 있어 겹치므로 같이 숨긴다.
+**삭제하지 않는다.** Reset wrapper `1003:1728` 은 visible 유지.
+
+### 텍스트 노드 이름이 마스터마다 다르다
+
+`04-select-input-components.js` 를 읽어보니 Input 은 `placeholder`, Select·Button 은 `label` 이다.
+이름을 하나로 가정했으면 Input 라벨을 못 찾았을 것이다.
+후보 이름 목록으로 찾고, 실패하면 첫 TEXT 자손으로 넘어가며,
+**어느 쪽으로 찾았는지(`라벨노드찾은법`)를 보고한다.**
+
+### index
+
+감사 시점 index 를 쓰지 않는다. 삽입 직전에 `indexOf` 를 다시 계산하고,
+삽입 직후 새 인스턴스 = 그 index, 원본 = index + 1 인지 확인하고 아니면 즉시 중단한다.
+`indexShiftedSincePlan` 으로 실제로 밀렸는지도 기록한다.
+
+### wrapper sizing 은 마지막에, 별도 mutation 으로
+
+`1003:1696` 을 HUG 로 바꾸는 것은 **6개가 전부 성공했을 때만** 한다.
+`wrapperSizingBefore` / `wrapperSizingAfter` / `wrapperWidthBefore` / `wrapperWidthAfter` 를 남기고,
+폭이 예상대로 수렴했는지(`widthConverged`)도 확인한다.
+중간에 멈추면 `skippedReason` 에 이유가 남는다.
+
+### 폭 예측 문구를 계산 방식과 맞춤
+
+`measuredLabel` 은 **글자크기와 문구가 둘 다 그대로일 때만** 이다.
+Phase B 는 라벨 문구가 바뀌므로(`지원 상태: 전체` 등) 글자크기가 같아도 글자 수가 달라진다 —
+그만큼은 여전히 추정이다. `labelCharRatio` 를 곱하고 `predictionKind` 를 `estimate` 로 둔다.
+`widthNote` 는 실제 `predictionKind` 구성에 따라 문구가 달라진다.
+
+실측 폭이 예측 범위를 벗어나면 notes 에 남기고
+**툴바 여유는 예측이 아니라 `toolbarAfter` 실측으로 판단**하라고 명시한다.
+
+### mock 으로 확인한 것
+
+DRY_RUN · APPLY 6개 전부 · 아이콘 swap · id 무시 시 key 폴백 ·
+중간 실패 시 중단(`completedTargets` 3개, `stoppedAt`, wrapper `attempted: false`) ·
+VERIFY 통과. 툴바 폭 기대값이 다를 때 검증기가 실패하는 것도 확인했다.
