@@ -672,3 +672,78 @@ mock 하네스로 5개 시나리오(정상 / 속성 실패 / 첫 variant 실패 
 `instanceCountRecursive` 는 `findAll` 이 인스턴스 내부까지 재귀하므로 **참고용이며 성공 조건이 아니다.**
 `defaultValue` 는 노드 id·컴포넌트 key 양쪽과 대조하고 어느 쪽으로 맞았는지(`defaultValueForm`)를 보고한다.
 적용 전/후 mock 양방향으로 돌려, 적용 후 4개 전부 통과·적용 전 4개 전부 실패를 확인했다.
+
+---
+
+## 16) Phase A — 단독 배지를 Chip 인스턴스로 교체 (APPLY 전)
+
+### 통과 조건을 개수에서 분류로 바꿈 (16a v3)
+
+v2 감사 결과: 알려진 후보 3개는 모두 잡혔고(`missingFromScan = []`),
+여분 6개는 전부 다른 UI 컨트롤이었다 —
+`1009:709` 기록 추가 Button, `1003:1697` 검색 Input,
+`1003:1705·1711·1717·1723` Filter Options.
+
+즉 새로 발견된 미확인 Chip 이 아니라 스캐너가 넓게 잡은 것뿐이다.
+그래서 **`scanCount = 3` 을 통과 조건에서 뺐다.**
+개수를 3으로 맞추려고 임계값을 계속 더하면 언젠가 진짜 Chip 을 놓친다.
+같은 이유로 v2 에서 넣었던 가로세로비 조건도 모양 판정에서 뺐다. 기록만 한다.
+
+| 새 통과 조건 | 뜻 |
+|---|---|
+| `candidateFoundCountIs3` | 알려진 후보 3개가 존재 |
+| `allKnownCandidatesScanned` | 3개가 모두 스캐너 조건을 통과 |
+| `missingFromScanEmpty` | 스캔에서 빠진 후보 없음 |
+| `unexplainedExtraCountZero` | **설명되지 않는** 여분 0개 |
+
+여분은 컨테이너(툴바)·이름·높이 순으로 분류하고 `classifiedBy` 에 근거를 남긴다.
+분류 자체가 틀릴 수 있으므로 근거도 검토 대상이다.
+
+### 교체 대상은 2개, 보류 1개
+
+| | 노드 | variant | 라벨 | leading |
+|---|---|---|---|---|
+| A-1 | `1002:506` v2.4 | `tone=neutral` | `v2.4` | 숨김 |
+| A-2 | `1009:703` 시즌 | `tone=brand` | `2026 하반기 시즌` | 노출 · `Icon / Dot` |
+| 보류 | `1002:478` 동기화 | — | — | — |
+
+**동기화 배지 보류는 누락이 아니라 결정이다.**
+현재 구조가 `bg = surface/subtle` + `text·dot = success/strong` 혼합이라
+Chip tone 5종에 정확히 맞는 variant 가 없다.
+`tone=success` 로 바꾸면 배경이 `#EFF4FF → #A7FAD4` 로 눈에 띄게 달라져
+"구조를 인스턴스로 교체" 라는 목적에 시각 디자인 변경이 섞인다.
+`tone=neutral` + fill 오버라이드는 유지보수가 나쁘다 —
+Chip 교체 때 `leading.visible` 오버라이드가 초기화된 전례가 있다.
+결과에 `Phase A skipped target — deferred sync badge` 로 명시해 누락처럼 보이지 않게 한다.
+
+### 인덱스가 어떻게 되는가
+
+원본이 index `i` 일 때
+
+1. `insertChild(i, 새 인스턴스)` → 새 인스턴스 `i`, 원본은 `i+1` 로 밀림
+2. `원본.visible = false` → **순서는 바뀌지 않는다.** 원본은 `i+1` 그대로
+
+최종: 새 인스턴스 `i`, 원본 `i+1`, 형제 수 +1.
+`i` 앞 형제는 그대로, `i` 뒤 형제는 한 칸씩 밀린다.
+원본이 숨김이므로 **화면상 순서는 교체 전과 같다.**
+
+### 부모 높이는 안 커진다
+
+세 위치 모두 가로 Auto Layout 이고 칩보다 높은 형제가 이미 높이를 정하고 있다.
+`parentGrowthPx = 0`, `formulaMatchesMeasured = true`.
+
+### 보고만 하고 고치지 않은 것
+
+시즌 배지의 점 색이 다르다 — `Icon / Dot` 은 `#3525cd`, 원본은 `#4f46e5`.
+교체하면 점 색이 바뀐다. 스크립트는 색을 임의로 바꾸지 않고 `dotColorCheck` 로 보고만 한다.
+(design-system-diff 에서 `1009:704` 를 `#3525cd` 로 모으기로 한 것과 방향은 같다.)
+
+### mock 으로 확인한 것
+
+DRY_RUN · APPLY 정상 · 아이콘 swap 필요/불필요 양쪽 ·
+`setProperties` 가 노드 id 를 조용히 무시할 때 컴포넌트 key 로 폴백 ·
+insertChild 실패 시 중단 + 미아 추적 · 교체 전 상태에서 검증기가 전부 실패.
+
+검증기에서 고친 것: `noDuplicateChipUnderParent` 가 칩 0개(=교체 안 됨)까지
+중복으로 묶고 있었다. 0개와 2개 이상은 다른 문제라 `exactlyOneChipUnderParent` 로 분리했다.
+보류 대상 "손대지 않음" 도 선언이 아니라 크기·색 실측으로 확인하게 바꿨다.
