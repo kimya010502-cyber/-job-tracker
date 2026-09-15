@@ -1431,3 +1431,40 @@ caption 을 켜는 카드가 그만큼 높아진다. `predictedHeightAfterConten
 
 높이를 억지로 맞추지 않는다. caption 을 네 장 모두 쓸지 / 모두 안 쓸지 / 이대로 둘지는
 교체 전에 정해야 할 디자인 결정이다.
+
+## 19 / 19b) Phase D 교체 스크립트 — APPLY 전
+
+KPI 4장을 `1033:2085` 인스턴스로 교체. 부모 strip `1002:23`.
+
+| 원본 | variant | 제목 / 값 / 단위 | caption | 배지 |
+|---|---|---|---|---|
+| `1002:24` | `delta=positive` | 이번 달 지원 / 20 / 건 | **hide** | +12 전월 대비 |
+| `1002:42` | `delta=positive` | 진행 중 / 14 / 건 | set 파이프라인 70.0% | +8 |
+| `1002:60` | `delta=negative` | 이번 달 불합격 / 6 / 건 | set 탈락률 30.0% | +4 |
+| `1002:78` | `delta=neutral` | 최종 합격 / 0 / 건 | **hide** | 시즌 목표 1개사 |
+
+역할 노드는 **이름 우선** (`label`/`number`/`unit`/`caption`, 배지 인스턴스 안 `label`),
+없을 때만 위치 추론. 어느 쪽으로 찾았는지 `roleSource` 에 남는다.
+
+caption 은 `hide` → `visible=false`, `set` → `characters` + `visible=true` 이고
+**둘 다 되읽는다.** Chip 때 visible 오버라이드가 초기화된 전례가 있다.
+
+FILL 은 삽입 후 `layoutSizingHorizontal = FILL` · `layoutGrow = 1` 을 명시하고 되읽는다.
+`1002:24` 안의 기존 vector 는 old body 내부 요소라 원본을 숨기면 같이 사라진다 —
+**누락이 아니라 DS 구조로의 의도된 정규화**이고 그 사실을 notes 에 남긴다.
+
+### APPLY 가 높이를 안 보고 "전부 성공" 이라고 말하던 문제
+
+mock 에서 카드 높이가 122 / 138 로 갈렸는데 **APPLY 는 `successCriteriaMet: true`** 를 냈다.
+높이를 `notes` 에만 적고 성공 조건에 넣지 않았기 때문이다. 검증기만 잡았다.
+
+`allCardHeightsMatchPrediction` 과 `allCardsSameHeight` 를 APPLY 성공 조건에 넣고,
+높이가 갈리면 note 가 아니라 **error** 로 올린다.
+검증기에도 `heightAnalysis.captionAffectsHeight` 를 넣어,
+caption 이 높이를 바꾸면 "감사의 전제(가로 footer row 안이라 높이 무관)가 깨졌다" 고 스스로 말하게 했다.
+
+### mock 으로 확인한 것
+
+DRY_RUN · APPLY 4장 전부 · caption hide/set 되읽기 · FILL 적용 ·
+3번째 카드에서 삽입 실패 시 `completedTargets ["c1","c2"]` / `targetsNotStarted ["c4"]` /
+`stoppedAt c3` / `c3InstanceCreatedNotInserted` + 미아 1개 / VERIFY 통과.
