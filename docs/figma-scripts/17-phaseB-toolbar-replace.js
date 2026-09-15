@@ -35,7 +35,7 @@
  * ========================================================================== */
 
 const DRY_RUN = true;          // ← 실제 수정할 때만 false 로 변경
-const SCRIPT_VERSION = '17-v1-phaseB-toolbar-replace';
+const SCRIPT_VERSION = '17-v2-phaseB-toolbar-replace';
 
 const TOOLBAR_ID = '1003:1695';
 const INPUT_WRAPPER_ID = '1003:1696';
@@ -148,7 +148,13 @@ async function loadSet(setId) {
                       refGap: v0 ? r2(v0.itemSpacing || 0) : 0,
                       refPaddingH: v0 ? r2((v0.paddingLeft || 0) + (v0.paddingRight || 0)) : 0,
                       labelWidth: lt.node ? r2(lt.node.width) : null,
-                      labelFontSize: lt.node ? r2(lt.node.fontSize) : null };
+                      labelFontSize: lt.node ? r2(lt.node.fontSize) : null,
+                      labelFontName: (function () {
+                        try {
+                          return lt.node && typeof lt.node.fontName === 'object'
+                            ? lt.node.fontName.family + ' ' + lt.node.fontName.style : null;
+                        } catch (e) { return null; }
+                      })() };
   return setCache[setId];
 }
 
@@ -176,6 +182,12 @@ for (const t of TARGETS) {
   rec.currentText = st.node ? st.node.characters : null;
   rec.currentTextWidth = st.node ? r2(st.node.width) : null;
   rec.currentTextFontSize = st.node ? r2(st.node.fontSize) : null;
+  rec.currentTextFontName = (function () {
+    try {
+      return st.node && typeof st.node.fontName === 'object'
+        ? st.node.fontName.family + ' ' + st.node.fontName.style : null;
+    } catch (e) { return null; }
+  })();
   rec.currentTextFoundBy = st.foundBy;
 
   rec.targetVariant = t.variant;
@@ -205,33 +217,86 @@ for (const t of TARGETS) {
   if (sizingH === 'FIXED') {
     rec.predictedWidth = r2(v.width);
     rec.predictionKind = 'exact';
-    rec.widthBasis = '마스터가 고정 폭 ' + r2(v.width) + ' 이다';
+    rec.widthBasis = '마스터가 고정 폭 ' + r2(v.width) + ' 이라 라벨 폭과 무관하게 확정이다';
     rec.predictedLow = rec.predictedWidth;
     rec.predictedHigh = rec.predictedWidth;
+    /* 폭 판정에는 안 쓰지만 비교표가 비지 않게 채운다 */
+    rec.currentString = rec.currentText;
+    rec.newString = t.label;
+    rec.stringIdentical = rec.currentText === t.label;
+    rec.currentLabelFontSize = rec.currentTextFontSize;
+    rec.masterLabelFontSize = si.labelFontSize;
+    rec.currentLabelFont = rec.currentTextFontName;
+    rec.masterLabelFont = si.labelFontName;
+    rec.fontSizeSame = si.labelFontSize !== null &&
+      Math.abs(si.labelFontSize - rec.currentTextFontSize) < 0.01;
+    rec.fontNameSame = !!(si.labelFontName && rec.currentTextFontName &&
+      si.labelFontName === rec.currentTextFontName);
+    rec.labelWidthUsed = null;
+    rec.estimateReasons = [];
+    rec.labelWidthIrrelevant = '마스터가 고정 폭이라 라벨 폭이 전체 폭을 바꾸지 않는다';
   } else if (si.labelWidth !== null && si.labelFontSize && rec.currentTextWidth !== null &&
              rec.currentTextFontSize) {
-    const sameSize = Math.abs(si.labelFontSize - rec.currentTextFontSize) < 0.01;
-    const scale = si.labelFontSize / rec.currentTextFontSize;
-    /* 라벨 문구가 바뀌므로 현재 텍스트 폭을 글자 수 비율로 보정한다 */
-    const charRatio = rec.currentText && rec.currentText.length
-      ? t.label.length / rec.currentText.length : 1;
-    const estLabel = r2(rec.currentTextWidth * scale * charRatio);
-    rec.labelFontSizeUnchanged = sameSize;
-    rec.labelCharRatio = r2(charRatio);
-    rec.estimatedLabelWidth = estLabel;
+    /* 새 인스턴스의 라벨은 **마스터의 typography** 로 그려진다.
+     * 그래서 "문구가 같다" 만으로는 폭이 같다고 할 수 없다 — 글자크기·폰트도 같아야 한다.
+     * 세 조건을 따로 판정하고, 무엇이 어긋났는지 남긴다. */
+    const stringIdentical = rec.currentText === t.label;
+    const fontSizeSame = Math.abs(si.labelFontSize - rec.currentTextFontSize) < 0.01;
+    const fontNameSame = !!(si.labelFontName && rec.currentTextFontName &&
+                            si.labelFontName === rec.currentTextFontName);
+    const typographyCompatible = fontSizeSame && fontNameSame;
+
+    rec.stringIdentical = stringIdentical;
+    rec.currentString = rec.currentText;
+    rec.newString = t.label;
+    rec.currentLabelFontSize = rec.currentTextFontSize;
+    rec.masterLabelFontSize = si.labelFontSize;
+    rec.currentLabelFont = rec.currentTextFontName;
+    rec.masterLabelFont = si.labelFontName;
+    rec.fontSizeSame = fontSizeSame;
+    rec.fontNameSame = fontNameSame;
+    rec.typographyCompatible = typographyCompatible;
+
     const addLeading = (t.leadingVisible === true) ? r2(si.refGap + LEADING_SLOT) : 0;
     rec.leadingAddition = addLeading;
-    const base = r2((v ? v.width : si.refWidth) - si.labelWidth + estLabel + addLeading);
+    const masterW = v ? v.width : si.refWidth;
+
+    let labelWidthUsed, band;
+    if (stringIdentical && typographyCompatible) {
+      /* 문구도 typography 도 같다 — 현재 실측 폭을 그대로 쓴다. 추정이 끼어들 자리가 없다. */
+      labelWidthUsed = rec.currentTextWidth;
+      rec.predictionKind = 'measuredLabel';
+      band = 0;
+      rec.widthBasis = '문구와 typography 가 모두 같아 현재 라벨 실측 폭 ' + rec.currentTextWidth +
+                       ' 을 그대로 사용 (' + JSON.stringify(t.label) + ', ' +
+                       rec.currentTextFontSize + 'px, ' + rec.currentTextFontName + ')';
+      rec.estimateReasons = [];
+    } else {
+      const reasons = [];
+      if (!stringIdentical) reasons.push('문구가 다르다 (' + JSON.stringify(rec.currentText) +
+                                         ' → ' + JSON.stringify(t.label) + ')');
+      if (!fontSizeSame) reasons.push('글자크기가 다르다 (' + rec.currentTextFontSize +
+                                      ' → ' + si.labelFontSize + ')');
+      if (!fontNameSame) reasons.push('폰트가 다르다 (' + rec.currentTextFontName +
+                                      ' → ' + si.labelFontName + ')');
+      const scale = si.labelFontSize / rec.currentTextFontSize;
+      /* 문구가 같으면 글자수비를 곱하지 않는다. 같은 문자열에 1을 곱하는 계산을 끼워넣지 않는다. */
+      const charRatio = stringIdentical ? 1
+        : (rec.currentText && rec.currentText.length ? t.label.length / rec.currentText.length : 1);
+      rec.labelScale = r2(scale);
+      rec.labelCharRatio = stringIdentical ? null : r2(charRatio);
+      labelWidthUsed = r2(rec.currentTextWidth * scale * charRatio);
+      rec.predictionKind = 'estimate';
+      band = 0.15;
+      rec.widthBasis = '현재 실측 폭 ' + rec.currentTextWidth + ' 에 보정을 적용해 ' + labelWidthUsed +
+                       ' 로 추정 — ' + reasons.join(' / ');
+      rec.estimateReasons = reasons;
+    }
+    rec.labelWidthUsed = labelWidthUsed;
+    const base = r2(masterW - si.labelWidth + labelWidthUsed + addLeading);
     rec.predictedWidth = base;
-    /* 글자 수가 달라지는 만큼은 여전히 추정이다. 글자크기만 같다고 실측이 되지 않는다. */
-    rec.predictionKind = (sameSize && Math.abs(charRatio - 1) < 0.001) ? 'measuredLabel' : 'estimate';
-    const band = rec.predictionKind === 'measuredLabel' ? 0 : 0.15;
-    rec.predictedLow = r2(base - estLabel * band);
-    rec.predictedHigh = r2(base + estLabel * band);
-    rec.widthBasis = rec.predictionKind === 'measuredLabel'
-      ? '글자크기와 문구가 모두 그대로라 현재 라벨 실측 폭 ' + rec.currentTextWidth + ' 을 그대로 쓴다'
-      : '현재 라벨 실측 폭 ' + rec.currentTextWidth + ' × 글자크기비 ' + r2(scale) +
-        ' × 글자수비 ' + r2(charRatio) + ' = ' + estLabel + ' (문구가 바뀌므로 추정)';
+    rec.predictedLow = r2(base - labelWidthUsed * band);
+    rec.predictedHigh = r2(base + labelWidthUsed * band);
   } else {
     rec.predictedWidth = null;
     rec.predictionKind = 'unknown';
@@ -386,13 +451,25 @@ if (missing.length) {
  * 5. DRY_RUN
  * ====================================================================== */
 const kinds = plan.map(p => p.predictionKind);
-const allMeasured = kinds.every(k => k === 'exact' || k === 'measuredLabel');
-const widthNote = allMeasured
-  ? '모든 대상이 exact 또는 measuredLabel 이다 — 현재 Figma 의 같은 글자크기 실측 라벨 폭을 그대로 썼고 ' +
-    'predictedLow 와 predictedHigh 가 predictedWidth 와 같다. 확정은 교체 후 17b 실측이다.'
-  : '라벨 문구나 글자크기가 바뀌는 대상만 추정이다 (predictedLow~High 는 라벨 폭 ±15%). ' +
-    'exact / measuredLabel 로 표시된 것은 실측 기반이다. 확정은 교체 후 17b 실측이다. ' +
-    '대상별 predictionKind 와 widthBasis 를 볼 것.';
+const kindCount = { exact: 0, measuredLabel: 0, estimate: 0, unknown: 0 };
+for (const k of kinds) if (kindCount[k] !== undefined) kindCount[k]++;
+const estimated = plan.filter(p => p.predictionKind === 'estimate');
+
+const widthNote = estimated.length === 0
+  ? 'exact ' + kindCount.exact + '개 · measuredLabel ' + kindCount.measuredLabel + '개. ' +
+    '추정이 하나도 없다 — 문구와 typography 가 그대로인 대상은 현재 Figma 의 실측 라벨 폭을 그대로 썼고, ' +
+    'predictedLow 와 predictedHigh 가 predictedWidth 와 같다. ' +
+    '그래도 새 인스턴스의 최종 폭은 교체 후 17b 에서 반드시 다시 실측한다.'
+  : 'exact ' + kindCount.exact + '개 · measuredLabel ' + kindCount.measuredLabel +
+    '개 · estimate ' + kindCount.estimate + '개. ' +
+    'estimate 인 대상: ' + estimated.map(p => p.key + '(' + (p.estimateReasons || []).join(', ') + ')').join(' · ') +
+    '. estimate 만 predictedLow~High 가 ±15% 로 벌어진다. ' +
+    '나머지는 실측 기반이다. 최종 폭은 교체 후 17b 실측으로 확정한다.';
+
+const measuredLabelNote =
+  'measuredLabel 조건: 문구가 완전히 같고, 글자크기와 폰트가 마스터와 같을 것. ' +
+  '새 인스턴스의 라벨은 **마스터의 typography** 로 그려지므로 문구만 같아서는 폭이 같다고 할 수 없다. ' +
+  '세 조건은 대상별 stringIdentical / fontSizeSame / fontNameSame 에 따로 찍혀 있다.';
 
 if (DRY_RUN) {
   return out({
@@ -427,6 +504,24 @@ if (DRY_RUN) {
     })),
     planRaw: plan,
     widthNote,
+    widthPredictionKinds: kindCount,
+    measuredLabelNote,
+    labelComparison: plan.map(p => ({
+      key: p.key,
+      현재문구: p.currentString !== undefined ? p.currentString : p.currentText,
+      새문구: p.newString !== undefined ? p.newString : p.newLabel,
+      문구동일: p.stringIdentical,
+      현재글자크기: p.currentLabelFontSize,
+      마스터글자크기: p.masterLabelFontSize,
+      글자크기동일: p.fontSizeSame,
+      현재폰트: p.currentLabelFont,
+      마스터폰트: p.masterLabelFont,
+      폰트동일: p.fontNameSame,
+      사용한라벨폭: p.labelWidthUsed,
+      현재실측라벨폭: p.currentTextWidth,
+      판정: p.predictionKind,
+      추정이유: p.estimateReasons
+    })),
     inputWrapper: wrapperPlan,
     toolbar: toolbarPlan,
     applyOrder: [
