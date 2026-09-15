@@ -1151,3 +1151,44 @@ Input wrapper HUG 정상. `successCriteriaMet = true`, `errorCount = 0`.
 `보이는 자식 폭 합 + gap + padding == 마스터 폭` 이 성립하는지 먼저 확인한다(`masterArithmeticCheck`).
 성립하지 않으면 그 마스터에 대해서는 폭 예측을 신뢰하지 않는다고 표시한다.
 이 값 차이는 Phase B 실패가 아니다 — 실측이 기준이고 툴바는 여유 3px 로 들어갔다.
+
+## 18a) Phase C 사전 감사 — '지원 기록 추가' Primary Button
+
+대상은 1개뿐이지만 **id 를 추측으로 확정하지 않는다.**
+이전 감사에서 `1009:709` 로 보였으나 그때는 "여분" 으로 분류만 하고 지나갔다.
+Reset 때와 같은 규칙으로 다시 찾는다 — 아이콘과 라벨을 둘 다 품은 **가장 안쪽** 노드,
+배경 유무는 조건이 아니다(ghost 를 놓치지 않기 위해).
+
+### 상위 컨테이너를 몸통으로 오인하던 문제
+
+mock 으로 "아이콘이 몸통 밖 형제로 붙어 있는" 구조(= Phase B 의 accessory 와 같은 모양)를
+만들어보니, "아이콘 + 라벨을 둘 다 품은 노드" 가 **상위 행** 이 되어
+라벨이 엉뚱하게 `지원 현황` 으로 잡혔다. 조용히 틀리는 종류의 오류다.
+
+그래서 후보를 거를 때 **자손 텍스트가 전부 대상 문구인 노드만** 남긴다.
+대상 밖 텍스트를 품고 있으면 위로 너무 올라간 것이다. 높이도 컨트롤 범위(24~48)로 제한한다.
+걸러진 이유는 `excludedReason` 에 남고, 확정된 라벨은 `resolvedLabel` 로 보고하며
+`resolvedLabelIsTarget` 이 gate 조건이다.
+
+고친 뒤 두 구조 모두에서 `1009:709` 를 정확히 잡고,
+아이콘이 밖에 있는 경우에는 `oldAccessoriesToHide: ["1009:713"]` 까지 계획에 들어간다.
+
+### Phase B 의 폭 예측 실패를 값으로 달고 다닌다
+
+Reset 에서 같은 식이 16px 빗나갔고 원인을 모른다. 그래서 두 가지를 바꿨다.
+
+1. 라벨 폭·gap·padding 을 **대상 variant 에서** 읽는다 (Phase B 는 `variants[0]` 에서 읽었다).
+2. `masterArithmeticCheck` — `보이는 자식 폭 합 + gap + padding == 마스터 폭` 이 성립하는지 먼저 확인한다.
+   성립하지 않으면 `formulaTrustworthy = false` 로 표시하고 예측을 쓰지 말라고 한다.
+   `gate.masterArithmeticValid` 로도 막는다.
+
+예측값에는 `phaseBMiss` 문구가 함께 붙어 나간다 — 이 값은 참고용이고 확정은 교체 후 실측이다.
+
+### gate
+
+`targetResolved` · `resolvedLabelIsTarget` · `targetIsSingleCandidate` · `buttonSetFound` ·
+`primaryVariantExists` · `leadingPropertyExists` · `plusIconFound` · `leadingDefaultIsPlus` ·
+`iconStructureResolved` · `variantChoiceResolved` · `masterArithmeticValid` · `layoutImpactMeasurable`
+
+`variantChoiceResolved` 는 배경·테두리가 모두 일치하는 variant 가 **하나뿐일 때만** 참이다.
+색 대조 결과가 요청(`variant=primary`)과 다르면 notes 로 알린다 — 색을 임의로 정하지 않는다.
