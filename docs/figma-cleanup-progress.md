@@ -773,3 +773,18 @@ mock 으로 세 경우를 확인했다 — dot 을 한 단계 아래로 내린 �
 같은 색(`same`) · 진짜 다른 색(`different`) · 한쪽을 못 읽는 경우(`undetermined`).
 
 16b 에도 `seasonLeadingIsIconDot` · `seasonLeadingVisible` 을 별도 성공 조건으로 드러냈다.
+
+### Phase A 완료 (2026-09-15)
+
+| | 원본 | 새 인스턴스 | variant | 라벨 | leading |
+|---|---|---|---|---|---|
+| A-1 | `1002:506` (숨김, 보존) | `1062:63` | `tone=neutral` | `v2.4` | 숨김 |
+| A-2 | `1009:703` (숨김, 보존) | `1062:67` | `tone=brand` | `2026 하반기 시즌` | `Icon / Dot` 노출 `#3525cd` |
+
+부모 높이 34 / 36 / 34.67 모두 유지. duplicate 없음. pageStrays 없음.
+`successCriteriaMet = true`, `errorCount = 0` (16-v2 APPLY, 16b-v2 VERIFY).
+
+보류: `1002:478` 실시간 동기화 완료 배지 — 원본 그대로, `visible = true`,
+131×24, `#eff4ff`, 옆에 Chip 추가 없음. **누락이 아니라 tone 결정 대기 상태다.**
+
+롤백: 새 인스턴스를 숨기고 원본을 다시 켜면 끝난다. 원본은 삭제하지 않았다.
