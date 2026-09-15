@@ -1120,3 +1120,34 @@ Reset 은 ghost variant · 라벨 · leading 구조가 맞는지 확인하고 **
 
 추가된 통과 조건: `allControlsAre36High`, `hugParentsFollowControlHeight`
 (세로 HUG 인 부모는 새 컨트롤 높이를 따라와야 한다).
+
+### Phase B 완료 (2026-09-15)
+
+| | 새 인스턴스 실측 | 원본 | accessory |
+|---|---|---|---|
+| Input | 240×36 | `1003:1697` 숨김 | `1003:1700` 숨김 |
+| Select1~3 | 133×36 | `1003:1705/1711/1717` 숨김 | `1003:1708/1714/1720` 숨김 |
+| Select4 | 117×36 | `1003:1723` 숨김 | `1003:1726` 숨김 |
+| Reset | 82×36 (wrapper 86×36) | `1003:1729` 숨김 | — |
+
+툴바 976×60 · occupied 973 · freeSpace 3 · overflow 없음 · 중복/미아 없음 ·
+Input wrapper HUG 정상. `successCriteriaMet = true`, `errorCount = 0`.
+
+#### ⚠ 폭 예측식이 Reset 에서 16px 빗나갔다 — 원인 미확인
+
+예측 66 (wrapper 70), 실측 82 (wrapper 86). 차이 16 은 **leading 슬롯 폭과 정확히 같다.**
+
+쓴 식은 `마스터 폭 − 마스터 라벨 폭 + 우리 라벨 폭 + (아이콘 16 + gap 4)` 였다.
+이 식은 "마스터 폭에 이미 들어 있는 라벨 폭을 빼고 우리 것을 넣는다" 는 전제인데,
+**그 전제가 성립하는지 한 번도 확인하지 않았다.**
+
+의심 가는 곳: `loadSet()` 이 `labelWidth` · `refGap` · `refPaddingH` 를
+`set.children[0]`(= primary variant)에서 읽는데, 폭은 대상 variant(ghost)에서 읽는다.
+**두 값이 다른 variant 에서 온다.** variant 마다 라벨 샘플이나 gap 이 다르면 그만큼 어긋난다.
+다만 16 이라는 차이가 정확히 leading 슬롯 폭과 같은 것도 우연으로 보기 어려워
+어느 쪽이 원인인지 지금 단정하지 않는다.
+
+**Phase C 대응**: 감사 단계에서 마스터 내부를 직접 재서
+`보이는 자식 폭 합 + gap + padding == 마스터 폭` 이 성립하는지 먼저 확인한다(`masterArithmeticCheck`).
+성립하지 않으면 그 마스터에 대해서는 폭 예측을 신뢰하지 않는다고 표시한다.
+이 값 차이는 Phase B 실패가 아니다 — 실측이 기준이고 툴바는 여유 3px 로 들어갔다.
