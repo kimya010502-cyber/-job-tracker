@@ -1318,3 +1318,70 @@ positive(초록)로 바꾸는 순간 화면이 달라진다. 그건 구조 교�
 
 같은 부모에 4개가 있으므로 APPLY 는 대상마다 삽입 직전에 `indexOf` 를 다시 계산한다
 (`orderNote`). 감사 시점 index 는 보고용이다.
+
+### 19a-v2 — 역할 판정 두 곳을 고침
+
+#### 기존 카드: unit 과 caption 을 같은 노드로 잡고 있었다
+
+v1 은 "가장 아래 텍스트 = 보조 문구" 로 잡아서 **support 가 전부 `건`** 이 됐다.
+`건` 은 단위지 설명이 아니다.
+
+v2 는 **배지 안 텍스트를 먼저 빼고** 나머지에서 나눈다.
+
+| 역할 | 판정 |
+|---|---|
+| value | 가장 큰 글자 |
+| unit | 값과 **같은 줄**에 있는 3자 이하 짧은 텍스트 |
+| title | 남은 것 중 가장 위 |
+| caption | 남은 것 중 가장 아래 (**없는 카드도 있다**) |
+| badgeText | 배지 안 텍스트 |
+
+`이번 달 지원` 과 `최종 합격` 은 별도 caption 이 없고 배지 문구만 있다.
+그래서 `everyCardHasSupport` 를 무조건 요구하지 않고,
+**마스터에서 caption 이 optional 인지 확인한 뒤** `captionHandlingValid` 로 판단한다.
+
+#### 마스터: 위치 추론만 써서 title 에 number 가 들어갔다
+
+마스터는 이름이 명확하다 (`05-kpi-card-component` 가 label / number / unit / caption 으로 만들었다).
+**이름을 먼저 쓰고 이름이 없을 때만 위치 추론으로 넘어간다.** 어느 쪽으로 정했는지 `roleSource` 에 남는다.
+
+`titleNode` · `valueNode` · `unitNode` · `captionNode` · `badgeNode` · `badgeLabelNode` 를 분리해 내고,
+`roleUniqueness` (exactlyOneTitle / Value / Unit / Caption / Badge) 를 gate 에 넣었다.
+
+#### variant 매핑 — 사람 확정
+
+Phase D 의 목적은 기존 예외를 복제하는 게 아니라 KPI 규칙대로 **정규화**하는 것이다.
+
+| 카드 | finalVariantDecision |
+|---|---|
+| 이번 달 지원 | `delta=positive` |
+| 진행 중 | `delta=positive` |
+| 이번 달 불합격 | `delta=negative` |
+| 최종 합격 | `delta=neutral` |
+
+`decisionSource = "human-confirmed"`. **신호 판정(색·문구)은 지우지 않고 그대로 남긴다** —
+사람 결정과 다르면 `decisionDiffersFromSignals` 로, 배지 색이 바뀌면 notes 로 드러난다.
+무엇이 달라지는지 보이지 않으면 "정규화" 와 "실수" 를 구분할 수 없다.
+
+#### FILL 문구 정정
+
+`235×4 + 12×3 = 976` 이라 현재 폭에서는 **우연히 정확히 맞는다.**
+그래서 "FILL 로 안 바꾸면 오른쪽에 빈 공간이 생긴다" 는 틀린 말이었다.
+
+정정: 지금 당장 빈 공간이 생기지는 않지만, 기존 카드가 FILL 이므로
+**반응형 sizing 의미를 보존하려면** 새 인스턴스에도
+`layoutSizingHorizontal = FILL` / `layoutGrow = 1` 을 명시해야 한다.
+안 하면 strip 폭이 바뀌는 순간 카드가 따라오지 않는다.
+`fillMustBeSetExplicitly = true` 는 유지하고 `fillWidthCoincidence` 를 따로 낸다.
+
+#### 높이 변화
+
+`currentHeight` · `masterHeight` · `predictedFinalHeight` · `heightDelta` ·
+`intentionalFromMaster` · `intentionalBasis` 를 출력한다.
+
+"의도된 값인가" 를 선언하지 않고 **잰다** — 마스터 높이가 세로 HUG 이고
+자기 내부 구성 합과 일치하면 마스터 구조에서 나온 값이다.
+일치하지 않으면 "어디서 나온 높이인지 확인이 필요하다" 고 말하고 gate 를 막는다.
+
+주변 영향도 본다: strip 부모가 세로 HUG 면 높이 변화가 전달되고,
+고정이면 strip 이 줄어도 아래 요소가 올라오지 않는다 (`surroundingImpact`).
