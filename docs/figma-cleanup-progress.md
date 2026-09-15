@@ -747,3 +747,29 @@ insertChild 실패 시 중단 + 미아 추적 · 교체 전 상태에서 검증�
 검증기에서 고친 것: `noDuplicateChipUnderParent` 가 칩 0개(=교체 안 됨)까지
 중복으로 묶고 있었다. 0개와 2개 이상은 다른 문제라 `exactlyOneChipUnderParent` 로 분리했다.
 보류 대상 "손대지 않음" 도 선언이 아니라 크기·색 실측으로 확인하게 바꿨다.
+
+### 16-v2 — dot 색 판정을 "못 읽음" 과 "다름" 으로 나눔
+
+v1 DRY_RUN 이 `originalSeasonDotFill = null`, `matches = false` 를 내고
+notes 에 "시즌 dot 색 불일치" 라고 적었다. **디자인 차이가 아니라 읽기 실패였다.**
+같은 파일을 16a v3 는 `#3525cd` / `brand/strong` 로 정상적으로 읽었다.
+
+원인: v1 의 dot 탐색이 **직계 자식만** 훑었다. `1009:704` 가 한 단계 아래에 있으면 못 찾고,
+못 찾은 것을 그대로 "불일치" 로 확정했다.
+
+고친 것
+
+| | v1 | v2 |
+|---|---|---|
+| dot 찾기 | 직계 자식에서 ELLIPSE/이름 매칭 | **16a 에서 확인된 노드 id `1009:704` 우선**, 실패 시 depth-3 탐색 |
+| 색 읽기 | 노드 자신의 fill 만 | `deepSolidHex` — 자신에 없으면 자식까지 |
+| 판정 | `matches` 한 개 (null 이면 곧바로 불일치) | `status` = `same` / `different` / **`undetermined`** |
+| 경고 | matches 가 false 면 무조건 | **`different` 일 때만.** `undetermined` 는 "읽지 못했을 뿐" 이라고 명시 |
+
+읽지 못한 것과 다른 것은 다른 상태다. 둘을 같은 값으로 뭉치면
+멀쩡한 디자인을 고치려 들게 된다.
+
+mock 으로 세 경우를 확인했다 — dot 을 한 단계 아래로 내린 구조에서
+같은 색(`same`) · 진짜 다른 색(`different`) · 한쪽을 못 읽는 경우(`undetermined`).
+
+16b 에도 `seasonLeadingIsIconDot` · `seasonLeadingVisible` 을 별도 성공 조건으로 드러냈다.

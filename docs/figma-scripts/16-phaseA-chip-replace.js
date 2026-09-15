@@ -37,7 +37,7 @@
  * ========================================================================== */
 
 const DRY_RUN = true;          // ← 실제 수정할 때만 false 로 변경
-const SCRIPT_VERSION = '16-v1-phaseA-chip-replace';
+const SCRIPT_VERSION = '16-v2-dot-color-read-fix';
 
 const CHIP_SET_ID = '1029:1984';
 const DOT_ICON_NAME = 'Icon / Dot';
@@ -49,7 +49,9 @@ const TARGETS = [
 
   { key: 'season', label: '시즌 배지', srcId: '1009:703',
     tone: 'tone=brand', text: '2026 하반기 시즌',
-    leadingVisible: true, leadingIcon: DOT_ICON_NAME }
+    leadingVisible: true, leadingIcon: DOT_ICON_NAME,
+    /* 16a v3 에서 확인된 원본 dot 노드. 이름·타입으로 찾다가 못 찾는 일을 막는다. */
+    dotNodeId: '1009:704' }
 ];
 
 const DEFERRED = [
@@ -79,6 +81,26 @@ function firstSolidHex(n) {
   if (!n || !Array.isArray(n.fills)) return null;
   const f = n.fills.filter(x => x.visible !== false && x.type === 'SOLID')[0];
   return f ? hex(f.color) : null;
+}
+/* 노드 자신에 solid fill 이 없으면 자식까지 내려간다.
+ * v1 은 직계 자식만 훑어서 한 단계 아래에 있는 dot 을 못 읽었고,
+ * 그걸 곧바로 "색 불일치" 로 단정했다. 못 읽은 것과 다른 것은 다른 상태다. */
+function deepSolidHex(n, depth) {
+  if (!n) return null;
+  const own = firstSolidHex(n);
+  if (own) return own;
+  if (depth <= 0) return null;
+  const cs = kids(n);
+  if (!cs) return null;
+  for (const c of cs) { const h = deepSolidHex(c, depth - 1); if (h) return h; }
+  return null;
+}
+function findDeep(n, pred, depth) {
+  const cs = kids(n);
+  if (!cs || depth <= 0) return null;
+  for (const c of cs) if (pred(c)) return c;
+  for (const c of cs) { const r = findDeep(c, pred, depth - 1); if (r) return r; }
+  return null;
 }
 async function mainCompOf(inst) {
   try { return await inst.getMainComponentAsync(); }
@@ -169,12 +191,24 @@ for (const t of TARGETS) {
   rec.currentVisible = src.visible;
   rec.currentTexts = (kids(src) || []).filter(c => c.type === 'TEXT').map(c => c.characters);
   rec.currentFill = firstSolidHex(src);
-  rec.currentDotFill = (function () {
-    const cs = kids(src) || [];
-    const dot = cs.filter(c => c.type === 'ELLIPSE' || /dot/i.test(c.name))[0];
-    return dot ? { name: dot.name, type: dot.type, size: r2(dot.width) + '×' + r2(dot.height),
-                   hex: firstSolidHex(dot) } : null;
-  })();
+  let dotNode = null;
+  let dotFoundBy = null;
+  if (t.dotNodeId) {
+    const byId = await figma.getNodeByIdAsync(t.dotNodeId);
+    if (byId) { dotNode = byId; dotFoundBy = 'node id ' + t.dotNodeId; }
+  }
+  if (!dotNode) {
+    dotNode = findDeep(src, c => c.type === 'ELLIPSE' || /dot/i.test(c.name), 3);
+    if (dotNode) dotFoundBy = 'depth-3 search (' + dotNode.id + ')';
+  }
+  rec.currentDotFill = dotNode
+    ? { id: dotNode.id, name: dotNode.name, type: dotNode.type,
+        size: r2(dotNode.width) + '×' + r2(dotNode.height),
+        hex: deepSolidHex(dotNode, 2), foundBy: dotFoundBy }
+    : null;
+  if (t.leadingIcon && !rec.currentDotFill) {
+    notes.push(t.label + ' 원본 dot 노드를 찾지 못했다 — 색 비교는 "판정 불가" 로 둔다');
+  }
 
   rec.parentId = p ? p.id : null;
   rec.parentName = p ? p.name : null;
@@ -241,22 +275,33 @@ if (missing.length) {
 }
 
 /* dot 색이 원본과 같은지 — 다르면 보고만 한다. 임의로 고치지 않는다. */
-const dotIconFill = dotIcon ? (function () {
-  const cs = kids(dotIcon) || [];
-  for (const c of cs) { const h = firstSolidHex(c); if (h) return h; }
-  return firstSolidHex(dotIcon);
-})() : null;
+const dotIconFill = dotIcon ? deepSolidHex(dotIcon, 3) : null;
 const seasonPlan = plan.filter(p => p.key === 'season')[0];
+const originalSeasonDotFill = seasonPlan && seasonPlan.currentDotFill
+  ? seasonPlan.currentDotFill.hex : null;
+const bothRead = !!(dotIconFill && originalSeasonDotFill);
+
 const dotColorCheck = {
+  iconDotNodeId: dotIcon ? dotIcon.id : null,
   iconDotFill: dotIconFill,
-  originalSeasonDotFill: seasonPlan && seasonPlan.currentDotFill ? seasonPlan.currentDotFill.hex : null,
-  matches: !!(dotIconFill && seasonPlan && seasonPlan.currentDotFill &&
-              dotIconFill.toLowerCase() === String(seasonPlan.currentDotFill.hex).toLowerCase()),
-  note: '다르면 시즌 배지의 점 색이 교체 후 달라진다. 이 스크립트는 색을 임의로 바꾸지 않고 보고만 한다.'
+  originalSeasonDotNodeId: seasonPlan && seasonPlan.currentDotFill ? seasonPlan.currentDotFill.id : null,
+  originalSeasonDotFoundBy: seasonPlan && seasonPlan.currentDotFill ? seasonPlan.currentDotFill.foundBy : null,
+  originalSeasonDotFill,
+  bothRead,
+  /* 못 읽은 것과 다른 것은 다른 상태다. 읽지 못했으면 "다르다" 가 아니라 "판정 불가" 다. */
+  matches: bothRead && dotIconFill.toLowerCase() === String(originalSeasonDotFill).toLowerCase(),
+  status: !bothRead ? 'undetermined' : (dotIconFill.toLowerCase() === String(originalSeasonDotFill).toLowerCase()
+    ? 'same' : 'different'),
+  note: 'status 가 different 일 때만 교체 후 점 색이 달라진다. ' +
+        '이 스크립트는 어느 경우에도 색을 임의로 바꾸지 않고 보고만 한다.'
 };
-if (!dotColorCheck.matches) {
+if (dotColorCheck.status === 'different') {
   notes.push('시즌 dot 색 불일치 — Icon / Dot ' + dotIconFill +
-             ' vs 원본 ' + (dotColorCheck.originalSeasonDotFill || '(못 읽음)') + '. 교체 후 점 색이 달라진다.');
+             ' vs 원본 ' + originalSeasonDotFill + '. 교체 후 점 색이 달라진다.');
+} else if (dotColorCheck.status === 'undetermined') {
+  notes.push('시즌 dot 색을 비교하지 못했다 (Icon / Dot ' + (dotIconFill || '못 읽음') +
+             ', 원본 ' + (originalSeasonDotFill || '못 읽음') + '). ' +
+             '불일치로 단정하지 않는다 — 읽지 못한 것뿐이다.');
 }
 
 /* ========================================================================

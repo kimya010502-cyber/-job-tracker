@@ -20,7 +20,7 @@
  * 값이 다르면 실패로 보고 원인을 찾는다. 기대값 쪽을 고치지 않는다.
  * ========================================================================== */
 
-const SCRIPT_VERSION = '16b-v1-phaseA-verify';
+const SCRIPT_VERSION = '16b-v2-phaseA-verify-season-dot';
 
 const CHIP_SET_ID = '1029:1984';
 const DOT_ICON_NAME = 'Icon / Dot';
@@ -47,6 +47,13 @@ const r2 = n => typeof n === 'number' ? Math.round(n * 100) / 100 : n;
 const near = (a, b) => typeof a === 'number' && typeof b === 'number' && Math.abs(a - b) < 0.5;
 const kids = n => Array.isArray(n.children) ? n.children : null;
 
+function deepFill(n, depth) {
+  if (!n || depth <= 0) return null;
+  const cs = kids(n);
+  if (!cs) return null;
+  for (const c of cs) { const h = firstSolidHex(c) || deepFill(c, depth - 1); if (h) return h; }
+  return null;
+}
 function firstSolidHex(n) {
   if (!n || !Array.isArray(n.fills)) return null;
   const f = n.fills.filter(x => x.visible !== false && x.type === 'SOLID')[0];
@@ -137,6 +144,7 @@ for (const t of TARGETS) {
     if (lead && lead.type === 'INSTANCE') { const m = await mainCompOf(lead); leadMain = m ? m.name : null; }
     row.leadingIcon = leadMain;
     row.checks.leadingIconCorrect = t.leadingIcon === null ? true : leadMain === t.leadingIcon;
+    row.leadingFill = lead ? firstSolidHex(lead) || deepFill(lead, 3) : null;
 
     row.checks.heightIs24 = near(inst.height, 24);
   } else {
@@ -215,8 +223,13 @@ const versionRow = rows.filter(r => r.key === 'version')[0] || null;
 const seasonRow = rows.filter(r => r.key === 'season')[0] || null;
 const allChecksOf = r => r && Object.keys(r.checks).every(k => r.checks[k] !== false);
 
+const seasonLeadingIsIconDot = !!seasonRow && seasonRow.leadingIcon === DOT_ICON_NAME;
+const seasonLeadingVisible = !!seasonRow && seasonRow.leadingVisible === true;
+
 const successCriteria = {
   versionReplaced: allChecksOf(versionRow),
+  seasonLeadingIsIconDot,
+  seasonLeadingVisible,
   seasonReplaced: allChecksOf(seasonRow),
   originalsHidden: rows.every(r => r.checks.originalHidden === true),
   originalsNotDeleted: rows.every(r => r.checks.originalStillExists === true),
@@ -247,6 +260,11 @@ return out({
   deferredNote: '동기화 배지는 누락이 아니라 Phase A 에서 의도적으로 제외한 대상이다. ' +
                 'tone 결정이 끝나면 별도 단계로 교체한다.',
   pageStrays,
+  seasonLeading: seasonRow ? {
+    icon: seasonRow.leadingIcon, visible: seasonRow.leadingVisible,
+    type: seasonRow.leadingType, fill: seasonRow.leadingFill,
+    note: 'fill 은 기록용이다. Icon / Dot 컴포넌트의 색을 그대로 따른다.'
+  } : null,
   parentHeightSummary: rows.concat(deferredRows).map(r => ({
     label: r.label, parent: r.parentName + ' (' + r.parentId + ')',
     before: r.parentHeightBefore, now: r.parentHeightNow,
