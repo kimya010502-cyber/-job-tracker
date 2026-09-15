@@ -1269,3 +1269,52 @@ DRY_RUN · APPLY 정상 · 아이콘 swap · insertChild 실패 시 중단 +
 
 SPACE_BETWEEN 기하 예측(x 878 / 간격 385)이 실측과 일치했다.
 18a-v2 가 gap 421 을 더해 계산했던 1012 는 실제로 존재하지 않는 값이었다.
+
+## 19a) Phase D 사전 감사 — KPI Card 4개
+
+이전 값을 하드코딩하지 않는다. KPI Strip `1002:23` 의 현재 상태를 다시 읽는다.
+이미 KPI 인스턴스인 자식은 교체 대상에서 빼고 `alreadyReplacedIds` 로 보고한다.
+
+### 텍스트 역할을 이름에 기대지 않는다
+
+제목 = 가장 위 텍스트 / 값 = 가장 큰 글자 / 보조 = 가장 아래 텍스트.
+판정 근거(`역할판정근거`)를 같이 싣는다. 노드 이름은 파일마다 다르고 믿을 수 없다.
+
+### variant 매핑 — 감으로 정하지 않는다
+
+측정 가능한 신호 **두 개**를 따로 읽는다.
+
+| 신호 | 어떻게 |
+|---|---|
+| 색 | 현재 배지의 배경색·변수가 어느 variant 배지와 맞는가 |
+| 문구 | 보조 문구에 `+숫자` / `−숫자` 나 증가·감소·탈락 같은 말이 있는가 |
+
+| 결과 | confidence |
+|---|---|
+| 둘이 일치 | `high` — 그 tone 으로 제안 |
+| 색만 결정적 | `medium` — 색을 따른다 (시각적으로 그대로 유지되는 쪽) |
+| 색이 어느 variant 와도 안 맞음 | **`low` — 제안하지 않는다** |
+
+마지막 경우가 중요하다. 문구만 보고 정하면 **배지 색이 말없이 바뀐다.**
+`+12 전월 대비` 라서 positive 로 잡고 싶어지지만, 현재 배지가 브랜드 보라색이면
+positive(초록)로 바꾸는 순간 화면이 달라진다. 그건 구조 교체가 아니라 디자인 변경이다.
+`variantMappingResolved` 는 4장 모두 `resolved`(= confidence 가 low 가 아님)일 때만 참이다.
+
+### FILL 여부가 이번 단계의 핵심
+
+마스터 폭만 보고 판단하면 안 된다. 현재 카드가 strip 안에서 **FILL 로 늘어나 있는지** 먼저 본다.
+
+- 현재 FILL + 마스터 고정 폭 → `fillMustBeSetExplicitly = true`.
+  삽입 후 `layoutSizingHorizontal` 을 FILL 로 바꿔주지 않으면
+  카드가 마스터 폭으로 쪼그라들고 오른쪽에 빈 공간이 생긴다.
+- 현재 고정 폭 → `마스터 폭 × 4 + gap × 3 + padding` 으로 overflow 를 계산한다.
+- 카드마다 sizing 이 다르면 한 가지로 예측하지 않고 `mixedSizingWarning` 을 낸다.
+
+### gate
+
+`stripFound` · `fourCardsResolved` · `noDuplicateCandidates` · `kpiSetFound` ·
+`requiredVariantsExist` · `everyCardHasTitle/Value/Support` · `variantMappingResolved` ·
+`parentStripResolved` · `layoutImpactMeasurable` · `overflowRiskFalse` · `replacementOrderMeasurable`
+
+같은 부모에 4개가 있으므로 APPLY 는 대상마다 삽입 직전에 `indexOf` 를 다시 계산한다
+(`orderNote`). 감사 시점 index 는 보고용이다.
