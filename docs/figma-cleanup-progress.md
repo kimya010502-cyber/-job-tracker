@@ -1192,3 +1192,35 @@ Reset 에서 같은 식이 16px 빗나갔고 원인을 모른다. 그래서 두 
 
 `variantChoiceResolved` 는 배경·테두리가 모두 일치하는 variant 가 **하나뿐일 때만** 참이다.
 색 대조 결과가 요청(`variant=primary`)과 다르면 notes 로 알린다 — 색을 임의로 정하지 않는다.
+
+### 18a-v3 — SPACE_BETWEEN 부모에서 gap 을 고정 간격처럼 더하던 오류
+
+v2 는 부모 내용 폭을 `자식 폭 합 + gap × (개수−1) + padding` 으로 계산했다.
+부모 `1009:715` 는 **SPACE_BETWEEN + 고정 폭 976** 이라 `itemSpacing` 이 쓰이지 않는다.
+남는 공간이 자식 사이로 재분배되는데 gap 421 을 고정 간격처럼 더해서
+`493 + 421 + 98 = 1012` 가 되어 **없는 overflow 를 만들어냈다.**
+
+(이 성질은 5단계 KPI Card 때 이미 기록해둔 것이었다 — 같은 함정에 두 번 걸렸다.)
+
+#### 기하로 계산한다
+
+`primaryAxisAlignItems === 'SPACE_BETWEEN'` 이고 주축이 고정이면
+내용 합으로 폭을 정하지 않고 **실제 x 좌표**로 배치를 다시 계산한다.
+
+자식을 x 순으로 세우고, `남는 공간 ÷ (개수−1)` 을 간격으로 놓아 위치를 재배치한다.
+그리고 **그 모델이 현재 x 좌표를 재현하는지 먼저 확인**한다 (`geometryModelMatchesMeasured`).
+재현하지 못하면 예측 위치를 확정값으로 쓰지 말라고 표시한다.
+
+출력: `currentActualSpaceBetween` · `predictedSpaceBetween` · `targetXCurrent` · `targetXPredicted` ·
+`targetRightEdgePredicted` · `parentRightEdge` · `availableSpaceBetween` · `shiftPx` ·
+`overlapRisk` · `overflowRisk` · `spaceBetweenReflowsSafely`
+
+#### gate
+
+`layoutImpactMeasurable` 은 이제 기하 계산이 실제로 성립할 때만 참이다 —
+모델이 현재 배치를 재현하고, 예측 간격과 남는 공간이 0 이상이며,
+오른쪽 끝이 부모 안쪽 끝을 넘지 않고, overlap·overflow 가 모두 false 일 때.
+
+자리가 부족하면 `note` 가 원인을 나눠서 말하고 notes 에도 남는다.
+mock 으로 정상·자리부족 두 경우를 확인했다.
+(경고 문구가 판정과 어긋나 "겹치는데 안 넘친다" 고 말하던 것도 같이 고쳤다.)

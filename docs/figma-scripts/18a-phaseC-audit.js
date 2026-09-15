@@ -18,7 +18,7 @@
  *   또 라벨 폭·gap·padding 을 **대상 variant 에서** 읽는다 (variants[0] 이 아니라).
  * ========================================================================== */
 
-const SCRIPT_VERSION = '18a-v2-phaseC-audit';
+const SCRIPT_VERSION = '18a-v3-phaseC-audit';
 
 const MAIN_ID = '1002:2';
 const BUTTON_SET_ID = '1029:1997';
@@ -460,17 +460,33 @@ if (target && prediction) {
   try { sh = parent.layoutSizingHorizontal; } catch (e) { /* 무시 */ }
   try { sv = parent.layoutSizingVertical; } catch (e) { /* 무시 */ }
 
-  const cW = mode === 'HORIZONTAL' ? r2(sum(widths) + gap * Math.max(0, widths.length - 1) + padH)
-           : (mode === 'VERTICAL' ? r2(mx(widths) + padH) : null);
+  /* SPACE_BETWEEN 에서는 itemSpacing 이 쓰이지 않는다.
+   * 남는 공간이 자식 사이로 재분배되므로, gap 을 고정 간격처럼 합계에 더하면
+   * 없는 overflow 를 만들어낸다. 부모 폭이 고정일 때가 그 경우다. */
+  const isSpaceBetween = parent.primaryAxisAlignItems === 'SPACE_BETWEEN';
+  const primaryFixedH = mode === 'HORIZONTAL' && sh !== 'HUG';
+  const distributesSpacing = isSpaceBetween && primaryFixedH;
+
+  const cW = mode === 'HORIZONTAL'
+    ? (distributesSpacing
+        ? r2(parent.width)                       // 폭이 고정이고 간격이 재분배된다 — 내용 합으로 폭이 정해지지 않는다
+        : r2(sum(widths) + gap * Math.max(0, widths.length - 1) + padH))
+    : (mode === 'VERTICAL' ? r2(mx(widths) + padH) : null);
   const cH = mode === 'HORIZONTAL' ? r2(mx(heights) + padV)
            : (mode === 'VERTICAL' ? r2(sum(heights) + gap * Math.max(0, heights.length - 1) + padV) : null);
 
   layoutImpact = {
     parentId: parent.id, parentName: parent.name, layoutMode: mode,
+    primaryAxisAlignItems: parent.primaryAxisAlignItems,
     sizingHorizontal: sh, sizingVertical: sv,
     currentSize: r2(parent.width) + '×' + r2(parent.height),
     paddingH: padH, paddingV: padV, gap,
+    spacingIsDistributed: distributesSpacing,
+    spacingNote: distributesSpacing
+      ? 'SPACE_BETWEEN + 고정 폭 — itemSpacing(' + gap + ') 은 쓰이지 않는다. 아래 기하 계산으로 판단할 것.'
+      : 'itemSpacing 이 실제 간격이다',
     contributingSiblings: remain.map(c => ({ id: c.id, name: c.name,
+      x: r2(c.x), rightEdge: r2(c.x + c.width),
       size: r2(c.width) + '×' + r2(c.height) })),
     contentWidthAfter: cW, contentHeightAfter: cH,
     predictedWidth: (sh === 'HUG' && cW !== null) ? cW : r2(parent.width),
@@ -480,6 +496,103 @@ if (target && prediction) {
     note: 'HUG 인 축만 예측값을 쓴다. 고정 축은 자식이 커져도 부모가 안 변한다.'
   };
   layoutImpact.parentActuallyGrows = layoutImpact.widthGrowthPx > 0.5 || layoutImpact.heightGrowthPx > 0.5;
+
+  /* ---- SPACE_BETWEEN 기하 계산 ----
+   * 실제 x 좌표로 현재 간격을 재고, 새 폭으로 위치를 다시 배치해 본다. */
+  if (mode === 'HORIZONTAL') {
+    const order = inFlow.slice().sort((a, b) => a.x - b.x);
+    const tIdx = order.findIndex(c => c.id === target.id);
+    const padL = r2(parent.paddingLeft || 0);
+    const padR = r2(parent.paddingRight || 0);
+    const innerRight = r2(parent.width - padR);
+    const n = order.length;
+
+    const curWidths = order.map(c => r2(c.width));
+    const newWidths = curWidths.slice();
+    if (tIdx >= 0 && prediction.predictedWidth !== null) newWidths[tIdx] = prediction.predictedWidth;
+
+    function layout(ws) {
+      const total = ws.reduce((a, w) => a + w, 0);
+      const free = r2(parent.width - padL - padR - total);
+      const spacing = distributesSpacing
+        ? (n > 1 ? r2(free / (n - 1)) : 0)
+        : gap;
+      const xs = [];
+      let x = padL;
+      for (let i = 0; i < n; i++) { xs.push(r2(x)); x = x + ws[i] + spacing; }
+      return { xs, spacing, free, total: r2(total) };
+    }
+
+    const cur = layout(curWidths);
+    const next = layout(newWidths);
+
+    /* 모델이 현재 배치를 재현하는지 먼저 확인한다 */
+    const measuredXs = order.map(c => r2(c.x));
+    const modelOk = measuredXs.every((mx2, i) => Math.abs(mx2 - cur.xs[i]) < 1);
+
+    const prevIdx = tIdx - 1;
+    const nextIdx = tIdx + 1;
+    const geo = {
+      parentWidth: r2(parent.width), paddingLeft: padL, paddingRight: padR,
+      parentRightEdge: innerRight,
+      childOrder: order.map((c, i) => ({ id: c.id, name: c.name,
+        width: curWidths[i], xMeasured: measuredXs[i], xModel: cur.xs[i],
+        isTarget: c.id === target.id })),
+      targetIndex: tIdx,
+      targetXCurrent: tIdx >= 0 ? measuredXs[tIdx] : null,
+      targetRightEdgeCurrent: tIdx >= 0 ? r2(measuredXs[tIdx] + curWidths[tIdx]) : null,
+      targetWidthCurrent: tIdx >= 0 ? curWidths[tIdx] : null,
+      targetWidthPredicted: prediction.predictedWidth,
+      targetXPredicted: tIdx >= 0 ? next.xs[tIdx] : null,
+      targetRightEdgePredicted: tIdx >= 0 ? r2(next.xs[tIdx] + newWidths[tIdx]) : null,
+      currentActualSpaceBetween: (tIdx > 0)
+        ? r2(measuredXs[tIdx] - (measuredXs[prevIdx] + curWidths[prevIdx])) : null,
+      predictedSpaceBetween: (tIdx > 0)
+        ? r2(next.xs[tIdx] - (next.xs[prevIdx] + newWidths[prevIdx])) : null,
+      spaceAfterTargetCurrent: (nextIdx < n)
+        ? r2(measuredXs[nextIdx] - (measuredXs[tIdx] + curWidths[tIdx])) : null,
+      spaceAfterTargetPredicted: (nextIdx < n)
+        ? r2(next.xs[nextIdx] - (next.xs[tIdx] + newWidths[tIdx])) : null,
+      availableSpaceBetween: r2(parent.width - padL - padR -
+        newWidths.reduce((a, w) => a + w, 0)),
+      totalChildWidthAfter: next.total,
+      distributedSpacingAfter: next.spacing,
+      geometryModelMatchesMeasured: modelOk
+    };
+    geo.overlapRisk = (geo.predictedSpaceBetween !== null && geo.predictedSpaceBetween < 0) ||
+                      (geo.spaceAfterTargetPredicted !== null && geo.spaceAfterTargetPredicted < 0) ||
+                      geo.availableSpaceBetween < 0;
+    geo.overflowRisk = geo.targetRightEdgePredicted !== null &&
+                       geo.targetRightEdgePredicted > innerRight + 0.5;
+    geo.spaceBetweenReflowsSafely = !geo.overlapRisk && !geo.overflowRisk;
+    geo.shiftPx = (geo.targetXPredicted !== null && geo.targetXCurrent !== null)
+      ? r2(geo.targetXPredicted - geo.targetXCurrent) : null;
+    const shiftText = geo.shiftPx === null ? '?'
+      : Math.abs(geo.shiftPx) + 'px ' + (geo.shiftPx < 0 ? '왼쪽' : '오른쪽');
+    if (!distributesSpacing) {
+      geo.note = 'itemSpacing 이 고정 간격이라 폭 변화가 그대로 누적된다';
+    } else if (geo.spaceBetweenReflowsSafely) {
+      geo.note = '간격이 재분배되므로 버튼이 ' + shiftText + '으로 움직일 뿐 부모는 넘치지 않는다';
+    } else {
+      const why = [];
+      if (geo.availableSpaceBetween < 0) why.push('자식 폭 합이 부모 안쪽 폭을 ' +
+        Math.abs(geo.availableSpaceBetween) + 'px 초과한다');
+      if (geo.predictedSpaceBetween !== null && geo.predictedSpaceBetween < 0)
+        why.push('앞 형제와 ' + Math.abs(geo.predictedSpaceBetween) + 'px 겹친다');
+      if (geo.spaceAfterTargetPredicted !== null && geo.spaceAfterTargetPredicted < 0)
+        why.push('뒤 형제와 ' + Math.abs(geo.spaceAfterTargetPredicted) + 'px 겹친다');
+      if (geo.overflowRisk) why.push('오른쪽 끝 ' + geo.targetRightEdgePredicted +
+        ' 이 부모 안쪽 끝 ' + geo.parentRightEdge + ' 를 넘는다');
+      geo.note = '간격을 재분배해도 자리가 부족하다 — ' + why.join(' / ') +
+                 '. 폭을 억지로 줄이지 말고 원인을 먼저 볼 것.';
+      notes.push('Phase C 배치 경고: ' + geo.note);
+    }
+    if (!modelOk) {
+      notes.push('배치 모델이 현재 x 좌표를 재현하지 못한다 — 예측 위치를 확정값으로 쓰지 말 것 ' +
+                 '(측정 ' + JSON.stringify(measuredXs) + ' vs 모델 ' + JSON.stringify(cur.xs) + ')');
+    }
+    layoutImpact.geometry = geo;
+  }
 }
 
 /* ---------- gate ---------- */
@@ -498,7 +611,21 @@ const gate = {
   iconStructureResolved: !!(target && target.iconStructure),
   variantChoiceResolved: !!(variantMatch && variantMatch.suggestedVariant),
   masterArithmeticValid: !!(master && master.arithmeticCheck && master.arithmeticCheck.matchesMeasured),
-  layoutImpactMeasurable: !!(layoutImpact && prediction && prediction.predictedWidth !== null)
+  /* SPACE_BETWEEN 계산이 실제로 성립할 때만 참이다 */
+  layoutImpactMeasurable: (function () {
+    if (!layoutImpact || !prediction || prediction.predictedWidth === null) return false;
+    const g = layoutImpact.geometry;
+    if (!g) return false;
+    return g.geometryModelMatchesMeasured === true &&
+           g.targetIndex >= 0 &&
+           g.targetXPredicted !== null &&
+           g.targetRightEdgePredicted !== null &&
+           (g.predictedSpaceBetween === null || g.predictedSpaceBetween >= 0) &&
+           g.availableSpaceBetween >= 0 &&
+           g.targetRightEdgePredicted <= g.parentRightEdge + 0.5 &&
+           g.overlapRisk === false &&
+           g.overflowRisk === false;
+  })()
 };
 const gatePassed = Object.keys(gate).every(k => gate[k]);
 
