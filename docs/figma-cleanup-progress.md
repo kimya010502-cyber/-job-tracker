@@ -1385,3 +1385,49 @@ Phase D 의 목적은 기존 예외를 복제하는 게 아니라 KPI 규칙대�
 
 주변 영향도 본다: strip 부모가 세로 HUG 면 높이 변화가 전달되고,
 고정이면 strip 이 줄어도 아래 요소가 올라오지 않는다 (`surroundingImpact`).
+
+### 19a-v3 — mapping 에서 caption 유실 + caption 처리 방법 확정
+
+#### 같은 버그를 한 단계 아래에서 반복했다
+
+v2 는 카드 쪽 역할 판정은 고쳤는데, `mapping` 을 만드는 곳에서 여전히 `c.support` 를 읽고 있었다.
+v2 에서 **내가 없앤 필드**다. 그래서 네 카드 모두 `support: null` 이 됐다.
+이름을 `caption` 으로 통일하고, `allCaptionMappingsCorrect` 를 gate 에 넣어
+카드 쪽 값과 mapping 쪽 값이 같은지 **기계가 대조**하게 했다.
+
+#### captionIsOptional 정의가 틀렸다
+
+v2 는 "`caption` 이라는 이름의 노드가 **없으면** optional" 로 봤다.
+반대다. 노드가 **있고 기본값이 숨김** 이면 optional 이다 — 그게 마스터가 선택적으로 만든 방식이다.
+(05b 가 `captionHidden` 을 통과 조건으로 두고 있었다.)
+
+#### 두 방법을 계산해서 비교한다
+
+| | A. 빈 문자열 | B. `visible = false` |
+|---|---|---|
+| 카드 높이 | caption 줄이 그대로 남음 | 그 줄이 통째로 사라짐 |
+| "caption 없음" 재현 | **못 한다** — 빈 줄이 남는다 | 한다 |
+| 인스턴스 오버라이드 | 가능 | 가능 (단 Chip 때 visible 오버라이드가 초기화된 전례 — APPLY 후 되읽기) |
+
+**B 를 택한다.** 근거는 마스터 구조에서 계산한 높이다.
+
+#### 카드별 caption action
+
+| 카드 | captionSource | captionAction | captionValue |
+|---|---|---|---|
+| 이번 달 지원 | null | `hide` | null |
+| 진행 중 | 파이프라인 70.0% | `set` | 파이프라인 70.0% |
+| 이번 달 불합격 | 탈락률 30.0% | `set` | 탈락률 30.0% |
+| 최종 합격 | null | `hide` | null |
+
+마스터 caption 이 기본 숨김이면 `set` 하는 카드는 **`visible = true` 로도 켜야 한다**
+(`captionMustBecomeVisible`).
+
+#### ⚠ 그 결과 카드 높이가 갈린다
+
+caption 을 켜는 카드가 그만큼 높아진다. `predictedHeightAfterContentOverrides` 를 카드별로 내고,
+갈리면 `stripConsequence` 로 **strip 최종 높이 · `counterAxisAlignItems` 영향 · 아래쪽 정렬 차이**
+를 구체적으로 말한다. MIN 이면 카드들이 위로 정렬되고 아래쪽이 들쭉날쭉해진다.
+
+높이를 억지로 맞추지 않는다. caption 을 네 장 모두 쓸지 / 모두 안 쓸지 / 이대로 둘지는
+교체 전에 정해야 할 디자인 결정이다.
