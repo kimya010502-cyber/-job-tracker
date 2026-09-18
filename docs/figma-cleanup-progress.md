@@ -1860,3 +1860,44 @@ Case D(Toolbar 가 음수로 넘어감 → 실패 + rollback, Gothic A1 복원) 
 오판하지 않음 + v1 기준값만 있을 때 v1 키로 대체 조회.
 
 **지금은 v2 DRY_RUN 만 실행한다. APPLY·verifier 링크는 DRY_RUN 결과를 ChatGPT 검토 후 별도로 받는다.**
+
+### 34-v2 DRY_RUN 결과 → ChatGPT 검토 (2026-09-18)
+
+`preflightPassed` true, `blockers` []. 8개 스타일 전부 found, Pretendard 4 굵기 로드 성공, 메인 화면 209/209,
+미연결 0, Main 이 scroll 로 정상 분류(freeH −67, 안 막음), Toolbar freeW 14 · Search Input freeW 2 가 민감 항목으로
+확인. scopeImpact(파일 전체 576 · 다른 화면 367 · backup 1044:47 영향 177)는 공유 스타일의 정상 동작으로 허용.
+**34-v2 APPLY 승인** → 같은 파일에서 `DRY_RUN = false` 로만 바꿔 실행(같은 scriptVersion, 새 파일 안 만듦).
+
+### 34-v2 APPLY 결과 (2026-09-18)
+
+`successCriteriaMet` true. `allEightUpdatedToPretendard` · `allNonFontFieldsUnchanged` · `allEligibleTextInheritsPretendard` ·
+`noDirectNodeOverridesCreated` · `noNewOverflow` · `noErrors` 전부 true. 레이아웃: Toolbar freeW 14 → 53(오히려 여유 증가),
+Search Input freeW 2 → 2(불변), Main freeH −67 → −67(불변, scroll regression 없음). **APPLY 성공, 재실행 안 함.**
+
+## 34b v3) verifier — baseline 의존 typography 오판 수정 (read-only)
+
+`34b-v3-font-pretendard-style-swap-verify` (파일 `.v3.js`, v1·v2 보존).
+
+34b-v2 verifier 실행 결과 `allEightArePretendard` false, `mainFrameInheritsPretendard` false 로 나왔으나
+`measured.styles` 는 8개 전부 Pretendard, `mismatched` 배열의 각 항목도 실제 font 는 Pretendard — **판정 로직 버그**였다.
+원인: `baselineFrom` = null(`joob.34.baseline.v2`/`joob.34.baseline` pluginData 를 이 Run 에서 못 찾음) →
+`chosenFamily` 가 baseline 에서만 오는 값이라 null 이 됐고, 두 check 와 `backupImpact.nowPretendard` 가 전부
+`chosenFamily` 비교에 의존해 measured 값과 무관하게 false/0 이 됨.
+
+수정: baseline 을 typography 판정에서 완전히 뺐다. `allEightArePretendard` · `mainFrameInheritsPretendard` ·
+`backupImpact` 는 지금 읽은 `fontName.family` 를 `/pretendard/i` 로 직접 판정(문자열 비교 · baseline 의존 없음).
+`weightsMatchRoles` 도 baseline.applied 대신 34 APPLY 와 같은 `STYLE_ALIASES` 표로 직접 판정(Semi Bold 같은 표기
+차이 허용). baseline 부재는 `errors` 가 아니라 `warnings` 로만 남기고 `successCriteriaMet` 에 섞지 않는다 — baseline 이
+없어도 지금 상태만으로 전부 검증 가능. 단, baseline JSON 이 **깨진 경우**(파싱 실패)는 진짜 문제이므로 `errors` 로 유지.
+`backupImpact` 에 실제 fontName 샘플(최대 8개)을 추가해 backup 텍스트가 실제로 무엇을 반환하는지 바로 볼 수 있게 했다.
+baseline 이 있을 때(정상 케이스)는 여전히 찾아 쓰고 scroll regression 대조에 보조로 활용 — 있을 때의 동작은 그대로다.
+
+mock 테스트(28개 항목): **34b-v2 로 버그를 먼저 재현**(스타일이 실제로 Pretendard인 상태에서 baseline 만 없게 만들면
+`allEightArePretendard`/`mainFrameInheritsPretendard` 가 잘못 false) → **34b-v3 로 같은 상태에서 재검증하면 정상
+true**(mismatched 빈 배열, `errorCount` 0, baseline 부재는 `warnings` 에만) / baseline 이 실제로 있을 때는 v2 와
+동일하게 정상 동작(scroll regression 대조 포함, warnings 없음) / `Semi Bold`(공백 있는 표기) alias 허용 확인 /
+backup 샘플이 실제 Pretendard 문자열로 나오는지 확인 / **진짜 문제(한 노드가 실제로 Gothic A1 로 남아있는 경우)는
+여전히 잡아낸다** — baseline 독립성이 진단 능력을 죽이지 않았는지 확인 / baseline JSON 이 깨진 경우는 `errors` 로
+남아 `successCriteriaMet` 를 false 로 만들되, typography 측정 자체는 정상적으로 계속 됨을 확인.
+
+**지금 실행할 것: 34b-v3 verifier (read-only, 바로 Run).**
