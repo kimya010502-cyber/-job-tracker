@@ -1671,3 +1671,20 @@ swap 이 안 먹는 상황을 만들면 삽입 전에 멈추고 인스턴스 삭
 `31b-H1-v1-header-bell-replace-verify` — `successCriteriaMet` true · `failedCriteria` [] · `protectedDiff` [] · `errorCount` 0.
 Bell 인스턴스 `1110:672` (Icon Button · `Icon / Bell` · 24×24). 원본 `1002:487` 숨김 → **G5 삭제 목록**.
 Header 1024×64 · effect 불변 · 다른 Bell 복제본 7개 불변 · stray 없음.
+
+## 메인 화면 마감 순서 (2026-09-18 확정)
+
+1. **H2** Sync chip `1002:478` 정리 → 2. Pretendard load probe (비파괴) → 3. 가능하면 Pretendard 로 Figma + 웹앱 typography 통일
+→ 4. G5 hidden / legacy cleanup → 5. final global verify.
+보류: Select chevron polish (마스터 수정만으로 전 인스턴스 반영 가능), 다른 화면 Bell 7개, backup frame 보관 이동(최종 검증 후).
+참고: 웹앱 `styles.css` 는 현재 Pretendard 가 아니라 `Malgun Gothic` / `Apple SD Gothic Neo` / system-ui 다.
+글자 폭이 바뀌면 HUG 컨트롤 폭이 바뀌고 툴바 여유가 14px 뿐이므로 폰트는 G5 · 최종 검증 **전에** 확정한다.
+
+## 32a) Phase H2 사전 감사 — Sync chip (읽기 전용)
+
+`32a-H2-v1-sync-chip-audit`. Phase A 보류 판단(bg `surface/subtle` + 글자·점 `success/strong` 혼합)을 실제 값으로 다시 확인한다.
+- 부분별 색 변수(배경 · 테두리 · 글자 · 점), 변수 없이 hex 로 칠해진 부분
+- Chip 세트 `1029:1984` variant 별 bg/라벨 변수와 **tone 별 일치도**(bg 만 / 글자만 / 둘 다)
+- 화면의 Chip 인스턴스와 fills override 전례 (시즌 배지 `Icon / Dot` 색)
+- 교체 크기 예측 — 라벨 글꼴이 Chip 과 같을 때만 정확, 다르면 근사라고 표시
+- 복제본: 모양(크기 + 자식 구성) · 글자 내용 두 기준으로 파일 전체
