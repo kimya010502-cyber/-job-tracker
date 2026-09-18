@@ -2099,3 +2099,48 @@ flow 스냅샷에 안 잡히는 대상(Toolbar padding 을 삭제 도중 0.3px �
 확인 / NEVER_TOUCH 5개 보호 유지 확인.
 
 **지금은 v2 DRY_RUN 만 실행한다. APPLY 는 이 결과를 검토한 뒤 진행한다.**
+
+### 36-v2 APPLY 도 동일하게 실패 → rollback 성공 (2026-09-18)
+
+`failure` = "되읽기 검증 실패: layoutUnchanged" — 0.5px 로 넓혔는데도 다시 걸렸다(**tolerance 를 더 이상 임의로
+늘리지 않기로 함** — 사용자 명시적 지시). `rolledBack` true · `rollbackClean` true, 24개 전부 세 번째 세대 id
+(`1135:xxxx`)로 재생성됨. 새 fresh backup `1135:1535` 생성, 기존 `1133:644` 은 그대로 보존.
+
+원인 규명 필요 — 정확히 어떤 노드의 어떤 필드가 얼마나 벗어났는지 36-v2 가 실패 시에 **저장하지 않아** 사후에
+알 수 없다는 사실 확인. 다음 두 개를 read-only 로 준비.
+
+## 38) Phase G5 — 2차 rollback 이후 상태 확인 (read-only)
+
+`38-G5-v2-recovery-audit`. 37 과 같은 구조를 세 번째 세대 id(`1135:xxxx`) 기준으로 갱신 — 원본·1차 복원
+(`1133:xxxx`) 둘 다 안 남아있는지(`staleIds`), 두 backup(`1133:644` · `1135:1535`) 다 mainFrame 밖에 그대로
+있는지(둘 다 손대지 않음). **`layoutMismatchCount` 는 일부러 `currentStateHealthy` 판정에서 뺐다** — 지금
+조사 중인 값을 스스로 "정상"이라고 판정하면 순환 논리가 되므로, 숫자만 그대로 내고 사람이 판단하게 한다.
+
+## 39) Phase G5 — layoutUnchanged 실패 원인 진단 (read-only, full-precision)
+
+`39-G5-v1-layout-diagnostic`.
+
+**한계를 먼저 밝힌다**: 36-v2 가 실패했던 정확한 "삭제 직후, rollback 직전" 값은 어디에도 저장돼 있지 않다
+(rollback() 이 실패 경로에서 layoutBefore/After 를 pluginData 에 안 남겼다 — 성공했을 때만 저장하도록 짜여
+있었다). 그래서 그 순간을 되짚을 수는 없고, 이 스크립트는 대신:
+- 지금(2차 rollback 이후) 값을 **반올림 없이 최대 정밀도로**(raw width/height/padding/gap, 자식 개별 폭·높이까지)
+  낸다
+- 유일하게 남아있는 신뢰 가능한 기준점인 **36-v1 DRY_RUN 최초 실측값**과 필드 단위로 대조해 "지금도 벗어나
+  있는지" 확인한다 (그 실패 순간의 delta 는 아니지만, 적어도 지금 상태가 원래 기준과 얼마나 다른지는 정확히 보여준다)
+- 표 형식: node id/name · field · before(=DRY_RUN 최초값) · after(=지금 raw 값을 반올림) · delta · absDelta ·
+  tolerance(0.5, flowChildCount 는 정수라 tolerance 없이 정확히 비교) · pass, **절대값 큰 순서로 정렬**해서
+  가장 어긋난 필드가 맨 위에 오게 했다
+- Main·Toolbar·Search Input·Header·Aside·KPI section·Grid 전부 + refs(View Toggle/Bell/Sync Chip, 값 그대로) +
+  flow snapshot(지금 해시만, 비교 대상 없음을 명시) + 보호 대상 5개까지 한 스크립트에 전부 포함
+
+다음 APPLY 시도가 다시 실패하면, 이 스크립트를 "삭제 직전"과 "rollback 직후" 두 번 돌려서 실제 delta 를 잡을 수
+있다는 것도 염두에 두고 설계했다(지금은 그 페어링을 아직 안 함 — 우선 지금 상태 진단이 먼저).
+
+mock 테스트: 38 은 25개(2차 세대 정상 · stale id(원본/1차) 각각 감지 · 2차 노드 소실 · backup 두 개 독립 감지 ·
+layoutMismatchCount 가 currentStateHealthy 를 순환 판정하지 않는지) / 39 는 29개(정확히 일치할 때 전부 pass ·
+0.3px drift 는 표에 정확히 찍히되 pass · 2px drift 는 fail 로 잡히고 정렬 1위로 올라옴 · Main 높이가 소수점이어도
+정밀하게 처리 · flowChildCount 는 tolerance 없이 정수 비교 · `layoutFull` 의 raw 필드들이 반올림 없이 정확한지 ·
+refs/보호 대상이 없을 때 크래시 없이 missing 으로 보고).
+
+**지금 실행할 것: 38(2차 recovery audit) + 39(진단) 둘 다 read-only, 순서 상관없이 바로 Run. 36-v3 APPLY 는
+이 두 결과를 검토한 뒤 별도로 준비한다.**
