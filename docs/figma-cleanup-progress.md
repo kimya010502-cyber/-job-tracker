@@ -2247,3 +2247,26 @@ KEEP wrapper 누락 각각 잡음 / ref 가 hidden 이면 잡음 / KPI·Grid 개
 각각 잡음.
 
 **지금 실행할 것: 40-G5-v1-final-verify (read-only, 바로 Run). 통과하면 Phase G5 CLOSED 로 기록한다.**
+
+### 40-G5-v1 실행 결과 → navItemCount6 만 false, 나머지 전부 통과 (2026-09-18)
+
+`allDeletedTargetsAbsent` · `reviewRequiredPresent` · `keepWrappersPresent` · `keepWrappersInsideToolbar` ·
+`refsAllPresentAndVisible` · `kpiCardCount4` · `gridAppCardCount12` · `mainIsScrollContainer` ·
+`allBackupsPresentOutsideMainFrame` · `noErrors` 전부 true. 유일한 실패는 `navItemCount6` — 원인은 verifier
+탐지 방식의 false negative: Aside 의 direct flow children 이 Container 2개(`1002:493`/`1002:532`)뿐이고
+NavItem 인스턴스는 그 안에 중첩돼 있어서, v1 의 "direct child + 이름 패턴" 방식으로는 0개가 나오는 게 정상이었다.
+실제 NavItem instance id 6개(`1093:614`/`619`/`624`/`629`/`634`/`639`, F1 단계에서 생성) 확인.
+
+## 40 v2) Phase G5 최종 검증 — NavItem 판정만 exact id 로 수정 (read-only)
+
+`40-G5-v2-final-verify` (파일 `.v2.js`, v1 보존). **NavItem 검증만 고쳤다** — 이름 패턴 best-effort 를 버리고
+exact id 6개 각각에 대해 exists · type===INSTANCE · visible===true · Aside(`1002:492`) 서브트리 안(중첩 깊이
+무관, `inside()` 로 확인)인지 직접 확인해 6개 전부 만족해야 `navItemCount6=true`. 나머지 v1 검증 로직(삭제 대상
+24개 부재, 보호 대상, refs, KPI 4/Grid 12, Toolbar 목록, Main scroll 구조, backup 4개)은 전혀 안 바꿨다.
+
+mock 도 실제 구조(Aside → Container 2개 → 그 안에 NavItem 중첩)로 갱신해서 재현: 정상 상태에서 통과(v1 스크립트로
+같은 mock 을 돌리면 여전히 false 가 나와 버그가 진짜였음을 다시 확인) / NavItem 하나가 아예 없거나 · hidden 이거나 ·
+Aside 밖에 있는 경우 각각 잡음(과잉 통과 방지) / 나머지 6개 v1 실패 시나리오(삭제 대상 잔존·보호 대상 누락·
+scroll 구조 깨짐·backup 소실)는 v1 과 동일하게 동작함을 회귀 확인. 총 26개.
+
+**지금 실행할 것: 40-G5-v2-final-verify (read-only, 바로 Run). 통과하면 Phase G5 CLOSED 로 기록한다.**
