@@ -2308,3 +2308,27 @@ Spacing·Radius·컴포넌트 스타일은 메인 화면 기준 우선. 구조: 
 가이드 카드 신규).
 
 **지금 실행할 것: 41-v1-detail-screen-component-discovery (read-only, 바로 Run).**
+
+### 41 결과 → 정확한 id 확보 (2026-09-18)
+
+Button `1029:1997`(variant, leading `leading#1056:7`) · Select `1030:2007`(state) · Input `1030:2017`(state,
+leading `leading#1056:12`) · Chip `1029:1984`(tone, leading `leading#1052:0`) · Icon Button `1037:2091`
+(icon `icon#1055:6`) · NavItem `1042:36`(state, icon `icon#1056:16`) · 재사용 아이콘(Chevron Left `1048:810` ·
+External Link `1048:794` · Calendar `1048:802` · Dot `1048:816` 등). 태그는 Chip `tone=neutral` 우선 재사용.
+추가 discovery 없이 바로 구현으로 진행.
+
+## 42) 상세 화면 구현 — 신규 icon + Timeline Step Card + Guide Card + 화면 조립 (DRY_RUN 전)
+
+`42-v1-detail-screen-build`. 하나의 스크립트로 전부 처리(icon 5개 생성 → Timeline Step Card set 생성 →
+Guide Card 생성 → Aside/Header clone 포함 화면 조립). 순수 추가 작업이라 G5 식 audit/backup/세대관리 없이,
+실패 시엔 이번에 새로 만든 최상위 노드만 지우면 원상복귀(rollback 이 훨씬 단순).
+
+신규: Icon / Edit·Trash·Lock·Check·Copy(41 에 없던 5개만) · Timeline Step Card(state=current/
+waiting-locked) · Guide Card. 배치: 신규 컴포넌트는 Chip 세트와 같은 부모 밑, 새 화면 프레임은 mainFrame과
+같은 부모 밑 mainFrame 바로 아래(기존 backup 들과 안 겹치는 자리).
+
+mock 28개(Figma 팩토리 함수 전체를 흉내 낸 목업)로 DRY_RUN 정상/차단, APPLY 성공(아이콘 5개·Timeline Step
+Card 2-variant·Guide Card·화면 프레임 전부 생성, Aside/Header 는 clone 이라 원본 안전, 기존 컴포넌트 훼손
+없음), 빌드 도중 진짜 예외 발생 시 rollback 으로 이번에 만든 것만 전부 지워지는지 확인.
+
+**지금 실행할 것: 42-v1-detail-screen-build DRY_RUN.**
