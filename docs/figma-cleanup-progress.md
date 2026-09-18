@@ -1525,3 +1525,19 @@ KPI 4장 모두 **235×86**, strip **976×86**, gap 12, sizing FILL, `layoutGrow
 - `design-system-diff.md` 는 토글 높이를 28 로 제안했지만, Phase B 이후 툴바 컨트롤 실측은 **36** 이다.
   높이는 제안값이 아니라 감사의 `toolbarVisibleInstanceHeights` 실측으로 정한다.
 - Phase B 완료 시 툴바 여유 폭이 3px 였다. 토글 폭이 바뀌면 넘칠 수 있으므로 `toolbarFreeSpace` 를 본다.
+
+### 28a 결과 + MCP 실측 (`get_metadata 1003:1695`, 1회)
+
+28a: `toggleFound` true · `1003:1735` · legacyId 와 구조 탐색 일치 · `errorCount` 0 · 선택 상태 = card.
+MCP 한도는 2026-09-18 기준 **다시 남아 있음** (§5 의 "20/20 소진" 은 당시 상태).
+
+| 항목 | 실측 |
+|---|---|
+| 툴바 | 976×60, padding 12, 자식 y=12 / h=36 → 세로 정중앙. 검색 12..252, 필터 그룹 267..964 → **freeSpace 15** |
+| 필터 그룹 `1003:1703` | 697×36, 자식 x = 0 / 141 / 282 / 423 / 548 / 642 → **gap 8** |
+| Reset wrapper `1003:1728` `Button:margin` | 86×36, 안의 인스턴스 x=**4** |
+| Toggle wrapper `1003:1734` `Margin` | 55×35.5, y=0.25, 안의 `1003:1735` x=**4** |
+
+두 wrapper 모두 왼쪽 4 — HTML `margin-left` 가 frame 으로 변환된 흔적이다.
+결과적으로 보이는 간격은 Select↔Select **8**, Select→초기화 **12**, 초기화→토글 **12** 로 일관된다.
+`Margin` 만 지우면 초기화→토글만 8 이 되어 리듬이 깨진다.
