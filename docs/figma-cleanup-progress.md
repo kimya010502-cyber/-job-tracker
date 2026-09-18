@@ -1775,3 +1775,18 @@ mock 을 실제 동작(clone 시 중첩 참조 `{}`, 삭제 노드 `.removed` �
 mock: DRY_RUN 137×24 · 부모 165×24 · Bell 0,0 유지 · 간격 4 · 중심 32 · self-check true /
 APPLY 통과(overrides = characters 하나, 색 override 0) / verifier 통과, Header blur 제거 + 복제본 색 변경 시 해당 항목만 실패 /
 원본 숨김 실패 → 인스턴스 삭제 · 원본 visible · 부모 159 복귀.
+
+### Phase H2 CLOSED (2026-09-18)
+
+`33b-H2B-v1-sync-chip-screen-replace-verify` — `successCriteriaMet` true · `failedCriteria` [] · `protectedDiff` [] · `errorCount` 0.
+sync Chip 인스턴스 `1115:688` · `tone=sync` · 137×24 · "실시간 동기화 완료" · leading Icon / Dot (`leading#1052:0`) · colorOverrides [].
+부모 165×24 · Header 1024×64 · 중심 32. 원본 `1002:478` 숨김 → **G5 삭제 목록**.
+
+## 34p) PROBE — Pretendard 사용 가능 여부 (읽기 전용)
+
+`34p-font-pretendard-v1-availability-probe`. 전역 교체 전에 이 PC 의 Figma/Scripter 에서 Pretendard 가 보이고 로드되는지 확인한다.
+- `listAvailableFontsAsync` 로 Pretendard 계열 family(이름 변형 포함)와 style 목록 → `loadFontAsync` 로 Regular / Medium / SemiBold / Bold 실제 로드
+  (로드는 문서를 바꾸지 않는다). SemiBold 는 "Semi Bold" 같은 표기 차이도 찾아서 실제 이름을 보고한다.
+- 텍스트 스타일 8개의 현재 값과 굵기 매핑(400 Regular · 500 Medium · 600 SemiBold · 700 Bold) 가능 여부.
+- 교체 범위 참고: 파일 / 메인 화면 텍스트 노드 중 로컬 스타일이 **연결되지 않은** 노드 수 — 스타일만 바꿔서는 따라오지 않는 노드다.
+- 끝에서 텍스트 스타일 8개를 처음 값과 다시 비교해 비파괴를 확인한다.
