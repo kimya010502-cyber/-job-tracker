@@ -1513,3 +1513,15 @@ KPI 4장 모두 **235×86**, strip **976×86**, gap 12, sizing FILL, `layoutGrow
 `successCriteriaMet = true`, `errorCount = 0`.
 
 배지 색 정규화(`이번 달 지원` 보라 → success, `진행 중` 민트 → success)는 의도된 변경이다.
+
+## 28a) Phase G1 사전 감사 — View Toggle (읽기 전용, 2026-09-18)
+
+`28a-G1-v1-viewtoggle-audit`. 아무것도 바꾸지 않는다.
+
+시작 전에 기록에서 확인한 사실:
+
+- 뷰 토글 아이콘 2개(`1003:1738` table, `1003:1741` card, 13.5×13.5)는 Icon Library 를 만들 때
+  **일부러 보류**했다 (`icon-system-design.md` §0-3). 즉 Icon Library 17종에는 뷰 아이콘이 없다.
+- `design-system-diff.md` 는 토글 높이를 28 로 제안했지만, Phase B 이후 툴바 컨트롤 실측은 **36** 이다.
+  높이는 제안값이 아니라 감사의 `toolbarVisibleInstanceHeights` 실측으로 정한다.
+- Phase B 완료 시 툴바 여유 폭이 3px 였다. 토글 폭이 바뀌면 넘칠 수 있으므로 `toolbarFreeSpace` 를 본다.
