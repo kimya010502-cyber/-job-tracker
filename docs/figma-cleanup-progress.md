@@ -1728,3 +1728,31 @@ leading 의 exposedInstances · componentProperties · overrides · 속성 참�
 property 는 추가하지 않고 BOOLEAN 속성 존재 여부와 visible 참조만 읽는다.
 finally 에서 clone 을 반드시 지우고 variant 5개 · tone 옵션 · 세트 크기 · 기존 variant · 파일 전체 Chip 인스턴스 · Icon / Dot · stray 를 재확인한다.
 mock: 정상 실행 · 중간 단계 강제 실패 모두 `cleanupOk` true.
+
+### 32p 결과 — 원인 확정
+
+`leading.visible = true` 는 정상 (설정 · 즉시 되읽기 true · Icon / Dot · 16×16 · index 0 · glyph `success/strong` 전부 정상).
+실패한 것은 **`c4_propertyRef` 하나**: 원본 leading 은 `{ mainComponent: "leading#1052:0" }`, clone 직후 leading 은 **`{}`**.
+→ variant 를 clone 하면 중첩 인스턴스의 INSTANCE_SWAP 속성 참조가 보존되지 않는다. (mock 은 참조를 그대로 복사해서 못 잡았다.)
+
+probe 의 `cleanupOk` false 는 **판정 오류**다: `cloneRemoved` 를 삭제한 노드 참조의 `.removed` 로 봤는데 실제 환경에서 기대값이 나오지 않았다.
+나머지 7개(variant 5 · tone 원복 · 기존 variant · 인스턴스 · Icon / Dot · 세트 크기 · stray 0)는 전부 true — 파일은 원래 상태다.
+교훈: 삭제 여부는 참조가 아니라 **id 로 다시 조회해 null 인지**로 판정한다.
+
+## 32-v2) Phase H2-A v2 (DRY_RUN 전)
+
+`32-H2A-v2-sync-chip-variant-create` / `32b-H2A-v2-sync-chip-variant-create-verify` (파일 `.v2.js`, v1 보존).
+- clone 직후 leading 을 기존 속성 `leading#1052:0` 에 재연결 — 13 과 같은 방식 `inst.componentPropertyReferences = { mainComponent: propKey }`.
+  재연결 전/후 참조를 `rebind` 로 결과에 남긴다. 새 속성 없음. preflight 에 `leadingKeyIsExpected` · `sourceLeadingIndex0` 추가.
+- leading 조건 9개를 따로 낸다: `leadingIsInstance` · `leadingVisible` · `leadingMainIconDot` · `leadingSize16` · `leadingPropertyRefCorrect` ·
+  `leadingIndex0` · `glyphVisible` · `glyphSize8` · `glyphColorSuccessStrong`. `allLeadingChecks` 는 합산용.
+  세트 속성이 정확히 `tone` + `leading#1052:0` 인지, padding 4/8/4/8 · gap 4 도 따로 본다.
+- rollback: id 재조회로 삭제 판정 + 넓혔던 세트 크기 복원 + cleanup 11항목(`cloneGone` · `noSyncVariant` · `variantCount5` ·
+  `toneOptionsRestored` · 기존 variant · 인스턴스 · Icon / Dot · 메인 화면 · leading 정의 · 세트 크기 · stray). 되읽기 실패 시 상세도 함께 낸다.
+- verifier v2: 같은 9항목 + 기존 5개 leading 참조가 그대로인지(`existingLeadingRefsIntact`).
+
+mock 을 실제 동작(clone 시 중첩 참조 `{}`, 삭제 노드 `.removed` 불명확)으로 고쳐 시험:
+정상 → APPLY 통과 (rebind `{}` → `leading#1052:0`) · verifier 통과 · 기존 variant 변경 시 해당 항목만 실패 /
+재연결이 무시되는 경우 → `leadingPropertyRefCorrect` 만 실패하고 rollback cleanup 11항목 전부 true /
+재연결 직후 강제 실패 · 라벨 변경 실패 → rollback cleanup 전부 true.
+처음 시험에서 재연결 실패 시 넓힌 세트 크기가 복원되지 않는 문제를 찾아 고쳤다.
