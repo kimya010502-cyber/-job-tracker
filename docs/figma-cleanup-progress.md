@@ -1618,3 +1618,27 @@ v2 (`30-G1B-v2-viewtoggle-replace` / `30b-G1B-v2-viewtoggle-replace-verify`, 파
   DRY_RUN 전부 통과 (inst 4,0 · Margin 56×36 · 그룹 698×36 x 266 · freeSpace 14 · 중심 12→48 / 30 · 간격 12=12=12, self-check true),
   APPLY 통과, 원본 숨김 단계 강제 실패 → 인스턴스 삭제 · Margin 55×35.5 · 그룹 697 · 원본 visible 복원 · 보호 대상 불변,
   verifier v2 통과 / backup 변경 시 해당 항목만 실패.
+
+### Phase G1-B CLOSED (2026-09-18)
+
+`30b-G1B-v2-viewtoggle-replace-verify` — `successCriteriaMet` true · `failedCriteria` [] · `protectedDiff` [] · `errorCount` 0.
+
+| | 값 |
+|---|---|
+| View Toggle 인스턴스 | `1108:665` · `view=card` · 52×36 · local 4,0 · 부모 `1003:1734` |
+| 원본 `1003:1735` | `visible=false`, 부모 유지 → **G5 에서 삭제** |
+| Margin / 필터 그룹 / 툴바 | 56×36 / 698×36 / 976×60 · freeSpace 14 |
+| 세로 중심 · 간격 | 토글 30 = 툴바 30 · 초기화→토글 12 |
+
+G5 cleanup 목록에 추가: `1003:1735` (숨김 원본), wrapper `1003:1734` · `1003:1728` 정리 여부 결정.
+
+## 31a) Phase H1 사전 감사 — Header Bell (읽기 전용)
+
+`31a-H1-v1-header-bell-audit`. MCP 는 이날 두 번째 호출에서 다시 Starter 한도로 막혀 Scripter 감사로 대신한다.
+
+- 후보: 과거 ID(버튼 `1002:487`, 벡터 `1002:489`) · 이름 · 구조(글자 없는 ≤44 컨테이너 + 벡터, 가장 바깥 것) 세 방향 대조
+- 버튼 실측 · 알림 점 같은 부속물 · 부모/형제/부모 사슬 · Icon Button(`1037:2091`) 구조와 `icon` INSTANCE_SWAP ·
+  화면의 Icon Button 인스턴스 표본(색 override 관례) · 24×24 로 바꿨을 때 부모 크기와 세로 중심 예측
+- `Icon / Bell` 은 12 에서 13.33×16.67 → 12.8×16 으로 축소됐으므로 문자열 비교 대신
+  **명령 순서 + 종횡비 + 축척 보정 후 좌표 최대 오차**로 같은 모양인지 판정한다
+- Header `1002:469` 의 fill 투명도 · DROP_SHADOW · BACKGROUND_BLUR 는 읽기만 한다
