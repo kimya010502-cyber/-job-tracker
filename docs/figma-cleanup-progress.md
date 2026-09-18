@@ -1948,3 +1948,43 @@ spacing 역할 있는 visible 노드는 KEEP / backup 은 후보에 전혀 안 �
 집계(cleanup/review/keep/protected count) 정합성 확인.
 
 **지금 실행할 것: 35-G5 audit (read-only, 바로 Run). 삭제 APPLY 는 이 결과를 검토한 뒤 별도로 준비한다.**
+
+### 35-G5-v1 실행 결과 → ChatGPT 검토 (2026-09-18)
+
+`SAFE_TO_DELETE` 70개로 나왔으나 상당수가 실제 legacy 가 아니라 **컴포넌트 인스턴스 내부의 의도적으로 숨긴
+optional slot**(App Card/Chip/KPI 안의 `leading`·`caption` 같은 variant 전용 레이어, id 가
+`I<instanceId>;<nodeId>` 형태)이었다. v1 은 "hidden 이면 기본적으로 안전"으로 판정해 이런 인스턴스 내부
+구조까지 다 잡아버린 게 원인 — 실제 cleanup 대상은 screen-level hand-built legacy 노드여야 한다.
+**v1 SAFE_TO_DELETE 결과는 신뢰하지 않는다. v2 로 재분류 필요.**
+
+## 35 v2) Phase G5 사전 감사 — 인스턴스 내부 보호 + 보수적 SAFE 판정 (read-only)
+
+`35-G5-v2-legacy-cleanup-audit` (파일 `.v2.js`, v1 보존).
+
+- **규칙 1 — 인스턴스 내부 descendant 는 무조건 먼저 분리**: parent chain 에 `INSTANCE` 가 하나라도 있거나
+  id 가 `I<...>;<...>` 형태(세미콜론 포함)면 화면 cleanup 대상에서 제외하고, optional-slot 이름 패턴
+  (`leading`/`trailing`/`caption`/`glyph`/`icon`/`badge`/`label`/`dot`/`indicator` 등) 이거나
+  `componentPropertyReferences` 가 있으면 `KEEP`(인스턴스가 스스로 관리하는 상태), 패턴이 애매하면
+  `REVIEW_REQUIRED` — **이 경로에서는 `SAFE_TO_DELETE` 를 아예 주지 않는다.**
+- **`SAFE_TO_DELETE` 판정을 보수적으로 축소**: hidden 이라는 것만으로 더 이상 안전하다고 안 본다. (a) 같은 부모의
+  비슷한 크기 visible INSTANCE 형제가 지금 감지되거나, (b) 이전 단계 verifier 로 CLOSED 까지 확인된 기록
+  (`confirmedReplaced: true`)이 있을 때만 준다. 둘 다 없으면(자동 탐지도 안 되고 기록도 없으면)
+  `REVIEW_REQUIRED` 로 내린다 — 이번에 새로 발견된 `1009:703`/`1009:709`/`1002:506` 이 여기 해당(역할 미확인,
+  `confirmedReplaced: false`).
+- 알려진 후보 목록을 H1/H2/G1-B 5개 + Phase B(Toolbar) 11개(`1003:1697`~`1729`) + Phase D(KPI) 4개
+  (`1002:24`/`42`/`60`/`78`) + Phase F1(Nav) 6개(`1002:512`~`542`, 전부 CLOSED 기록 있어 `confirmedReplaced: true`)
+  + 새로 발견된 3개(`confirmedReplaced: false`)로 확장.
+- 각 후보에 `insideInstance` · `nearestInstanceAncestor` · `isComponentDefinedOptionalLayer` ·
+  `topLevelLegacyRoot` · `hasVisibleReplacementSibling` · `deletionScopeDescendantCount` 추가.
+  요약도 `safeLegacyRoots` · `protectedInstanceInternals` · `keepWrappers` · `reviewRequired` ·
+  `totalHiddenButIntentional` 5개 버킷으로 다시 나눴다.
+
+mock 테스트(37개 항목): **A** hidden nested `leading` slot(App Card 인스턴스 내부) → KEEP, 절대 SAFE 아님 /
+**B** hidden KPI `caption` slot → KEEP / **C** 화면 legacy 원본 + 감지된 교체 인스턴스(Bell·sync 배지, 6px 폭
+차이 포함) → SAFE_TO_DELETE 유지 / **D** visible wrapper padding 있으면 KEEP 유지 / 인스턴스 내부인데 이름
+패턴이 애매한 레이어는 REVIEW(KEEP 도 SAFE 도 아님) / id 에 세미콜론만 있고 실제 INSTANCE 부모가 없는 경우도
+id 패턴만으로 인스턴스 내부로 판정 / **회귀 확인**: v1 에서 SAFE 였던 "새로 발견 + 교체 미탐지 + CLOSED 기록
+없음" 노드가 v2 에서는 REVIEW_REQUIRED 로 내려감 / CLOSED 기록만 있고 이번 mock 에 교체 인스턴스가 없어도
+기록으로 SAFE 판정 / summary 5버킷 정합성 · backup 범위 제외 재확인.
+
+**지금 실행할 것: 35-G5-v2 audit (read-only, 바로 Run). 삭제 APPLY 는 이 결과를 검토한 뒤 별도로 준비한다.**
