@@ -2332,3 +2332,33 @@ Card 2-variant·Guide Card·화면 프레임 전부 생성, Aside/Header 는 clo
 없음), 빌드 도중 진짜 예외 발생 시 rollback 으로 이번에 만든 것만 전부 지워지는지 확인.
 
 **지금 실행할 것: 42-v1-detail-screen-build DRY_RUN.**
+
+### 42 APPLY 결과 → 반려 (2026-09-18)
+
+42 는 APPLY 까지 정상 실행됐지만, 사용자가 실제 Figma 결과를 보고 반려: "구조적으로 원본 PNG 의 장점을
+너무 많이 잃었다." Summary bar 가 너무 크고 성김 · Timeline 카드 사이 연결선 없음 · current 카드 강조가
+약함 · waiting-locked 카드가 옅은 톤/플레이스홀더처럼 보임 · 메모 패널이 작고 성김 · 2단 비율이 PNG 와
+다름(좌우 폭) · 정보 위계 순서가 PNG 와 어긋남 · **버그: waiting-locked 인스턴스 2개의 텍스트를 안 바꿔서
+"1차 실무 면접"이 두 번 나옴(3단계는 "최종 임원 면접"이어야 함)** · 수직 여백 과다 · 전체 비율이 PNG 보다
+넓게 퍼짐. 42 의 산출물은 그대로 파일에 남겨두고(재사용 안 함), 새 스크립트로 재생성.
+
+## 43) 상세 화면 v2 — PNG 레이아웃/정보밀도 복원, 42 완전 재생성
+
+`43-v1-detail-screen-build-v2`. 42 를 패치하지 않고 전부 새로 만든다(신규 컴포넌트 5종 + Timeline Step
+Card + Guide Card + 화면 프레임, 전부 42 결과물과 안 겹치는 위치에 배치). 42 대비 고친 것: ① Summary bar —
+항목 사이 구분선 + padding/gap 축소로 compact 하게 ② Timeline 카드 사이에 짧은 세로 연결선(`connector`) 추가
+③ current 카드 좌측에 실제 accent 막대 — `curContent` 를 먼저 다 만들어 높이를 잰 뒤 그 높이에 맞춘
+accent rectangle 을 `layoutMode:'NONE'` 오버레이로 뒤에 깔아 z-order 로 합성 ④ waiting-locked 카드를 옅은
+틴트가 아니라 current 와 같은 흰 카드 스타일로 ⑤ 우측 메모 패널 폭 280→304, 본문을 여러 줄로 확장
+⑥ 2단 비율을 좌 648 · 갭 24 · 우 304 = 976(콘텐츠 폭) 정확히 일치하도록 재계산 ⑦ 정보 위계 순서는 42 와
+동일하게 유지(상단바→summary→timeline→memo) ⑧ **버그 수정** — waiting-locked 컴포넌트 안 title/desc TEXT 에
+`step-title`/`step-desc` 이름을 붙이고, 인스턴스 생성 후 `findByName`+`overrideLockedText` 로 각각 정확히
+override(2단계="1차 실무 면접", 3단계="최종 임원 면접") ⑨ 전체 padding/gap 축소로 밀도 상향 ⑩ Sidebar/
+Header 는 그대로 clone 재사용.
+
+mock 55개로 DRY_RUN 정상/차단, APPLY 성공 시 구조 확인(accent 막대가 실제로 content 뒤에 깔려 있는지·
+step2/step3 텍스트가 서로 다르게 override 됐는지 · connector 2개가 카드 사이에 들어갔는지 · 우측 패널/
+Guide Card 폭이 304 로 맞는지 · summary bar 구분선 3개 · 42 의 산출물이 그대로 남아있어도 안 건드리는지),
+예외 발생 시 이번에 만든 것만 rollback 되는지까지 전부 확인. 전부 통과, 버그 없음.
+
+**지금 실행할 것: 43-v1-detail-screen-build-v2 DRY_RUN.**
