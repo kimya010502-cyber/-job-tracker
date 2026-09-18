@@ -2270,3 +2270,18 @@ Aside 밖에 있는 경우 각각 잡음(과잉 통과 방지) / 나머지 6개 
 scroll 구조 깨짐·backup 소실)는 v1 과 동일하게 동작함을 회귀 확인. 총 26개.
 
 **지금 실행할 것: 40-G5-v2-final-verify (read-only, 바로 Run). 통과하면 Phase G5 CLOSED 로 기록한다.**
+
+## Phase G5 CLOSED (2026-09-18)
+
+`40-G5-v2-final-verify` — `successCriteriaMet` true · `failedCriteria` [] · `phaseVerdict` "Phase G5 CLOSED 가능".
+삭제 대상 24개 전부 부재 · REVIEW_REQUIRED 3개/KEEP wrapper 2개 존재(+Toolbar 서브트리 안) · View Toggle/Bell/
+Sync Chip 존재·visible · KPI Card 4/App Card 12 · NavItem 6(exact id) · Main vertical scroll 구조 유지 ·
+backup 4개(`1133:644`/`1135:1535`/`1137:2426`/`1138:3317`) 전부 mainFrame 밖에 보존. 전부 확인.
+
+## 메인 화면 source of truth 확정 (2026-09-18)
+
+A~H2(Chip·Button·Select/Input·Add·KPI·App Card·NavItem·layout/scroll·Footer 제거·View Toggle·Header Bell·
+Sync Chip) + Pretendard 폰트 전환 + G5(legacy/hidden 정리) 전부 CLOSED. `메인 화면 (1002:2)` 을 디자인
+시스템·컴포넌트 체계의 공식 기준 화면으로 확정한다. 이후 다른 화면은 이 메인 화면에서 이미 검증된 컴포넌트
+(Button/Select/Input/Chip/KPI/App Card/NavItem/Pagination/Icon Library/Icon Button)와 토큰(Typography·
+Spacing·Radius·Controls 높이)을 그대로 재사용해서 확장한다.
