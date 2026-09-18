@@ -2219,3 +2219,31 @@ KPI section(둘 다 HUG) · Grid(둘 다 HUG) 를 실제로 HUG 축으로 설정
 전부 참조 안 함 / NEVER_TOUCH 5개 유지.
 
 **지금 실행할 것: 36-G5-v4 DRY_RUN. 통과하면 APPLY 진행 여부를 결과 검토 후 결정한다.**
+
+### 36-G5-v4 APPLY 성공 (2026-09-18)
+
+`successCriteriaMet` true · `rolledBack` false · `allTargetsDeleted` · `flowSnapshotUnchanged` ·
+`layoutUnchanged`(v4 수정 후 처음으로 통과) · `trackedRefsUnchanged` · `protectedNodesUntouched` · `noErrors`
+전부 true. 24개 삭제(하위 103개 포함), backup `1138:3317` 생성. **Phase G5 삭제 실행 완료.**
+
+## 40) Phase G5 최종 검증 (read-only)
+
+`40-G5-v1-final-verify`.
+
+- 삭제 대상 24개(v4 allowlist) 가 전부 없는지 · REVIEW_REQUIRED 3개·KEEP wrapper 2개 존재(+wrapper 가 Toolbar
+  서브트리 안에 있는지) · View Toggle/Bell/Sync Chip 존재·visible.
+- KPI section 이 KPI Card 4개, Grid 가 App Card 12개만 flow 에 남았는지(legacy 는 이미 삭제됐으니 hidden 으로
+  숨어서 안 잡힐 걱정도 없다).
+- **NavItem 6개는 best-effort** — 정확한 컴포넌트 마스터 id 를 갖고 있지 않아 이름 패턴("nav item")으로 찾는다.
+  안 맞으면 note 로 "직접 aside 목록을 봐달라"고 명시하지, 조용히 넘기지 않는다.
+- Main 이 여전히 의도된 vertical scroll 컨테이너인지 **절대값이 아니라 구조로**(FIXED height ·
+  clipsContent · overflowDirection VERTICAL) 확인.
+- 지금까지 생긴 fresh backup 4개(`1133:644` · `1135:1535` · `1137:2426` · `1138:3317`) 전부 mainFrame 밖에
+  그대로 있는지 — 전부 손대지 않는다.
+
+mock 테스트(26개 항목): 정상 상태에서 전부 통과 / 삭제 대상이 하나라도 남아있으면(회귀) 잡음 / REVIEW_REQUIRED·
+KEEP wrapper 누락 각각 잡음 / ref 가 hidden 이면 잡음 / KPI·Grid 개수가 하나라도 다르면 잡음 / NavItem 개수가
+다르면 note 와 함께 잡음 / Main 이 scroll 구조가 아니면 잡음 / backup 이 없거나 mainFrame 안으로 잘못 들어가면
+각각 잡음.
+
+**지금 실행할 것: 40-G5-v1-final-verify (read-only, 바로 Run). 통과하면 Phase G5 CLOSED 로 기록한다.**
