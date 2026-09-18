@@ -1665,3 +1665,9 @@ Bell `1002:487` 29.33×34.67 · 부모 `1003:1744` "Frame 2" (HORIZONTAL · HUG/
 mock (Header SPACE_BETWEEN · 중간 wrapper 하나 가정): DRY_RUN 전부 통과 · self-check true · 부모 159×24 · 형제 x 33.33→28 · 간격 4 ·
 Bell 중심 32→32, APPLY 통과 · verifier 통과, Header blur 제거 + backup 변경 시 해당 4항목만 실패,
 swap 이 안 먹는 상황을 만들면 삽입 전에 멈추고 인스턴스 삭제 · 부모 크기 원래대로.
+
+### Phase H1 CLOSED (2026-09-18)
+
+`31b-H1-v1-header-bell-replace-verify` — `successCriteriaMet` true · `failedCriteria` [] · `protectedDiff` [] · `errorCount` 0.
+Bell 인스턴스 `1110:672` (Icon Button · `Icon / Bell` · 24×24). 원본 `1002:487` 숨김 → **G5 삭제 목록**.
+Header 1024×64 · effect 불변 · 다른 Bell 복제본 7개 불변 · stray 없음.
