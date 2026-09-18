@@ -2285,3 +2285,26 @@ Sync Chip) + Pretendard 폰트 전환 + G5(legacy/hidden 정리) 전부 CLOSED. 
 시스템·컴포넌트 체계의 공식 기준 화면으로 확정한다. 이후 다른 화면은 이 메인 화면에서 이미 검증된 컴포넌트
 (Button/Select/Input/Chip/KPI/App Card/NavItem/Pagination/Icon Library/Icon Button)와 토큰(Typography·
 Spacing·Radius·Controls 높이)을 그대로 재사용해서 확장한다.
+
+---
+
+# 화면 확장 — 상세 페이지 (2026-09-18~)
+
+메인 화면 정리(A~H2, Pretendard, G5)와 달리 이후 화면들은 **기존 화면을 새로 만드는 작업**이라 audit →
+cleanup → backup → generation 세대 관리 방식을 쓰지 않는다. 컴포넌트 구조 확인(추측 방지) → 신규 컴포넌트
+생성 → 화면 조립 → 가벼운 구조 확인, 이 정도로 간단하게 간다.
+
+## 41) 상세 화면 구현 전 — 기존 컴포넌트 구조 확인 (read-only)
+
+`41-v1-detail-screen-component-discovery`. G5 식 audit 이 아니라, Button/Select/Input/Icon Library 의
+정확한 id·property 를 추측 없이 확보하기 위한 단발성 조회. 파일 전체 COMPONENT/COMPONENT_SET 나열 +
+이름 패턴별 요약(Button/Select/Input/Chip/Icon/NavItem) + 상세 화면에 필요할 아이콘(뒤로가기·수정·삭제·
+외부링크·달력·자물쇠·체크·복사 등) 필터링 + Chip 세트 tone variant 옵션. mock 12개로 집계 로직 확인.
+
+상세 화면 소스: 「지원 기업별 상세 페이지」 PNG(사용자 첨부) — 레이아웃/정보구조 기준. 색상·Typography·
+Spacing·Radius·컴포넌트 스타일은 메인 화면 기준 우선. 구조: Header(재사용) → 페이지 상단바(뒤로가기·기업명/
+포지션·저장 상태·수정/삭제/원문보기, 신규) → 요약 바(지원일·전체 현황·현재 단계·전형 상태·다음 일정, 신규) →
+2단 본문(좌: Timeline Step Card `state=current`/`state=waiting-locked` 신규 컴포넌트 / 우: 기업 메모 패널 +
+가이드 카드 신규).
+
+**지금 실행할 것: 41-v1-detail-screen-component-discovery (read-only, 바로 Run).**
