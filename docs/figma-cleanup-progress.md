@@ -1688,3 +1688,27 @@ Header 1024×64 · effect 불변 · 다른 Bell 복제본 7개 불변 · stray �
 - 화면의 Chip 인스턴스와 fills override 전례 (시즌 배지 `Icon / Dot` 색)
 - 교체 크기 예측 — 라벨 글꼴이 Chip 과 같을 때만 정확, 다르면 근사라고 표시
 - 복제본: 모양(크기 + 자식 구성) · 글자 내용 두 기준으로 파일 전체
+
+### 32a 결과 → H2 방향 확정
+
+`1002:478` 131×24 · "실시간 동기화 완료" · bg `surface/subtle` + 글자 · 점 `success/strong` · 변수 없는 색 0.
+`exactToneMatch` [] · bg 만 `neutral` · 글자만 `success`. 화면 Chip 인스턴스 54개 중 색 override 전례 **0** →
+인스턴스 색 override 는 관례에 맞지 않는다. **Chip 세트에 `tone=sync` variant 를 추가**하기로 한다.
+크기: legacy 131 (dot 8 + gap 6 + 라벨 101 + 16) → Chip 규칙 137 (leading 16 + gap 4 + 101 + 16). 137 을 정상으로 받아들인다.
+부모 `1003:1744` 159×24 → 165×24 예상, Header 높이 불변.
+단계: H2-A 세트에 variant 추가(화면 무수정) → H2-B `1002:478` 교체(원본 숨김, G5 삭제).
+
+## 32) Phase H2-A — Chip `tone=sync` variant 추가 (DRY_RUN 전)
+
+`32-H2A-v1-sync-chip-variant-create` / verifier `32b-H2A-v1-sync-chip-variant-create-verify`.
+
+- `tone=success` 를 세트 안에서 **clone** → `tone=sync`. padding · gap · radius 변수 연결, 텍스트 스타일, leading 슬롯
+  (Icon / Dot 16×16 + `leading` INSTANCE_SWAP 참조)이 그대로 따라온다.
+- 바꾸는 것 4가지: 배경 → `surface/subtle`, 라벨 → `success/strong`(샘플 문구 "동기화"), leading visible → true, Dot glyph → `success/strong`.
+- leading 가시성은 boolean 속성이 아니라 variant 마다의 레이어 visible 이라 sync 만 켤 수 있다 (13 에서 확인한 구조).
+- 보호: 기존 variant 5개 · leading 속성 정의 · 파일 전체 Chip 인스턴스 · Icon / Dot · 메인 화면 · backup. 이번 snapshot 은
+  글자 내용 · 글꼴 · 변수 연결 · property 참조까지 포함한다.
+- 되읽기 실패 시 clone 삭제 후 variant 5개 · tone 옵션 · 인스턴스가 원래대로인지 재확인.
+
+mock: DRY_RUN 통과(글꼴 load 확인 포함) · APPLY 72×24 (8+16+4+36+8, HUG 확인) · tone 옵션 6개 · verifier 통과,
+기존 variant 색을 바꾸면 해당 항목만 실패, 라벨 문구 변경에서 강제 실패 → clone 삭제 · variant 5개 복귀.
