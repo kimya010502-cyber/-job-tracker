@@ -1599,3 +1599,22 @@ mock 에서 잡은 버그: 예측 함수가 세로 축에 가로 내용 폭을 �
 `axisSize(node, axis, contentW, contentH)` 로 바꿔 축 혼동을 없앴다.
 mock 결과: DRY_RUN 예측 Margin 56×36 · 그룹 698×36 (x 267→266) · freeSpace 15→14 · 중심 30=30 · 간격 12→12,
 APPLY 전부 통과, 원본 숨김 단계에서 강제 실패 → 인스턴스 삭제 · 보호 대상 불변, verifier 통과 / backup 변경 시 해당 항목만 실패.
+
+### 30-v1 DRY_RUN 차단 → v2 (2026-09-18)
+
+v1 DRY_RUN: `toggleVerticallyCentered` · `resetToToggleVisualGap12` 가 예측 **null** 로 막힘. mutation 0, APPLY 안 함.
+원인: v1 은 Margin 이 HORIZONTAL 이라고 가정했다. 실제 `1003:1734` 는 **VERTICAL · HUG/HUG · padding 0/0/0/4 · MIN/MIN**,
+자식은 원본 하나. x=4 는 세로 auto layout 의 paddingLeft 에서 나온 값이다.
+mock 도 같은 가정(HORIZONTAL Margin)으로 만들어서 이 문제를 잡지 못했다.
+
+v2 (`30-G1B-v2-viewtoggle-replace` / `30b-G1B-v2-viewtoggle-replace-verify`, 파일은 `.v2.js`):
+- 가로/세로 공통 배치 함수 `childPos` 하나로 Margin → 필터 그룹 → 툴바를 계산한다.
+- **`predictionModelMatchesCurrent`** — 같은 함수로 "지금 구조"를 계산해 원본 · Margin · 그룹의 실제 위치가 나오는지 먼저 확인한다.
+  모델이 실제 layout 과 다르면 예측을 쓰지 않고 막는다 (v1 같은 가정 오류를 DRY_RUN 에서 스스로 드러낸다).
+- 초기화→토글 간격은 local 계산과 absoluteTransform 실측 두 가지로 재고 둘이 같아야 통과.
+- 새 gate: `marginLayoutModeVertical` · `marginPaddingMatches` · `marginOnlyChildLegacy` · `newInstanceLocalX4` · `newInstanceLocalY0` ·
+  `toggleCenterAfter30` · `toolbarCenter30` · `resetToToggleGapBefore12` · `resetToToggleGapAfter12`.
+- mock 을 실제 구조(Margin · 초기화 wrapper 모두 VERTICAL · padL 4, 숨김 자식은 흐름에서 제외)로 다시 만들었다.
+  DRY_RUN 전부 통과 (inst 4,0 · Margin 56×36 · 그룹 698×36 x 266 · freeSpace 14 · 중심 12→48 / 30 · 간격 12=12=12, self-check true),
+  APPLY 통과, 원본 숨김 단계 강제 실패 → 인스턴스 삭제 · Margin 55×35.5 · 그룹 697 · 원본 visible 복원 · 보호 대상 불변,
+  verifier v2 통과 / backup 변경 시 해당 항목만 실패.
