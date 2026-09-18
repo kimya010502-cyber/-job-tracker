@@ -1559,3 +1559,23 @@ preflight 12개 (이름 충돌 · 변수 6 · effect style · radius 값 8/4 · 
 성공 시에만 `joob.G1A.baseline` 을 남긴다 (verifier 29b 용).
 
 mock 으로 확인: DRY_RUN 통과 · APPLY `successCriteriaMet` true · 3번째 frame 생성에서 강제 실패 → rollback 6개, leftovers 0, 보호 대상 불변.
+
+### 29 APPLY 결과 (2026-09-18)
+
+`successCriteriaMet` true · `failedCriteria` [] · `errorCount` 0 · `protectedDiff` [] · 이름당 1개 · 페이지 최상위 증가 정상.
+
+| 노드 | ID |
+|---|---|
+| `Icon / View / Table` | `1105:646` |
+| `Icon / View / Card` | `1105:648` |
+| `View Toggle` set | `1105:664` (default = table) |
+| `view=table` · `view=card` | `1105:650` · `1105:657` |
+
+두 아이콘 모두 fills 채널 · glyph 13.5 @ 1.25,1.25 · 경로 원본 일치 · 기본 `text/muted`.
+
+### 29b verifier
+
+`29b-G1A-v1-viewtoggle-create-verify` — 읽기 전용, 플래그 없음. 보호 대상은 29 가 남긴 `joob.G1A.baseline` 해시와 비교
+(snapshot 함수는 29 와 동일). 원래 토글 `1003:1735` 는 메인 화면 해시 + 51×35.5 · 자식 `1003:1736,1003:1739` · 부모 `1003:1734` 를 직접 확인.
+stray = 이름당 1개 + 부모 자식 수가 기준값과 같음 + 세트 밖 `view=*`/`glyph`/segment frame 없음 + source 부모 자식 수 불변.
+mock: 정상 상태 통과, 선택 segment fill 제거 + 기존 아이콘 이동을 일부러 넣으면 해당 두 항목만 실패.
