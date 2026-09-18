@@ -1712,3 +1712,19 @@ Header 1024×64 · effect 불변 · 다른 Bell 복제본 7개 불변 · stray �
 
 mock: DRY_RUN 통과(글꼴 load 확인 포함) · APPLY 72×24 (8+16+4+36+8, HUG 확인) · tone 옵션 6개 · verifier 통과,
 기존 variant 색을 바꾸면 해당 항목만 실패, 라벨 문구 변경에서 강제 실패 → clone 삭제 · variant 5개 복귀.
+
+### 32-v1 APPLY 실패 → rollback 정상 (2026-09-18)
+
+실패: `되읽기 검증 실패: newVariantLeadingIconDotVisible`. rollback: `rollbackClean` true · variant 5개 · tone 옵션 원복 ·
+`protectedDiff` [] · `chipInstanceDiff` [] · 세트 99×200 (DRY_RUN 과 같음). **v1 은 다시 APPLY 하지 않는다.**
+원인 미확정 — 이 조건은 visible · main=Icon/Dot · 16×16 · 속성 참조 · index 다섯 가지를 한 줄로 묶어 어느 것이 틀렸는지 남기지 않았다.
+mock 은 통과했으므로 mock 과 실제 Figma 의 차이다.
+
+## 32p) PROBE — clone 된 variant 의 leading visible 동작 (self-cleaning)
+
+`32p-H2A-v1-sync-leading-visibility-probe`. `tone=success`(`1029:1975`)를 임시 clone 해 v1 과 같은 순서
+(clone → rename → 배경·라벨 → `leading.visible = true` → glyph fill)로 재현하고, **단계마다 v1 조건 다섯 가지를 따로** 기록한다.
+leading 의 exposedInstances · componentProperties · overrides · 속성 참조 · glyph visible/fill · render bounds 도 함께.
+property 는 추가하지 않고 BOOLEAN 속성 존재 여부와 visible 참조만 읽는다.
+finally 에서 clone 을 반드시 지우고 variant 5개 · tone 옵션 · 세트 크기 · 기존 variant · 파일 전체 Chip 인스턴스 · Icon / Dot · stray 를 재확인한다.
+mock: 정상 실행 · 중간 단계 강제 실패 모두 `cleanupOk` true.
