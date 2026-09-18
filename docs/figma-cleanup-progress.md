@@ -2144,3 +2144,44 @@ refs/보호 대상이 없을 때 크래시 없이 missing 으로 보고).
 
 **지금 실행할 것: 38(2차 recovery audit) + 39(진단) 둘 다 read-only, 순서 상관없이 바로 Run. 36-v3 APPLY 는
 이 두 결과를 검토한 뒤 별도로 준비한다.**
+
+### 38·39 실행 결과 → 지금 상태는 정상, drift 없음 (2026-09-18)
+
+39: `totalFields` 15 · `failingFields` 0 · `worstAbsDelta` 0 — Main/Toolbar/Search Input/Header/Aside/KPI/Grid
+전부 36-v1 DRY_RUN 최초 실측값과 absDelta 0 으로 정확히 일치. `refsUnchangedNow` true · `protectedNodesOk` true.
+**지금 이 순간에는 실제 레이아웃 drift 가 전혀 없다** — v1·v2 실패는 영구적 상태 차이가 아니라 삭제 직후 측정
+그 순간에만 존재했다 사라지는 무언가였을 가능성이 더 높아졌다. **추가 recovery audit·진단 스크립트는 그만
+만들고, 36-v3 APPLY 하나만 준비하기로 함.**
+
+## 36 v3) Phase G5 — 3세대 allowlist + 실패 시 진단 캡처 + settle yield (DRY_RUN 전)
+
+`36-G5-v3-legacy-cleanup-apply` (파일 `.v3.js`, v1·v2 보존). **tolerance 는 0.5 로 유지, 더 늘리지 않았다**(사용자
+명시적 지시).
+
+- **ALLOWLIST 를 36-v2 rollback 이후 실제 id(세 번째 세대, `1135:xxxx`)로 교체**. `EXPECTED_GROUP` 도 같이 갱신.
+- **핵심 변경 — `layoutUnchanged` 가 실패하면 `rollback()` 을 부르기 전에 반드시 진단을 먼저 만든다**:
+  `fieldDiagnostics`(TRACKED_LAYOUT 7개 × w/h/freeW/freeH/flowChildCount, node id/name·before·after·delta·
+  absDelta·tolerance·pass, absDelta 큰 순서로 정렬) + `layoutBefore/After` · `refsBefore/After` ·
+  `flowBefore/After` 전체를 `failureDiagnostics` 라는 이름으로 `rollback()` 결과에 그대로 포함시킨다 —
+  rollback 이 성공하든 일부만 성공하든 이 진단은 최종 JSON 에서 절대 안 사라진다. v1·v2 는 이걸 아예 안 만들어서
+  "무엇이 얼마나 달랐는지"를 한 번도 실제로 본 적이 없었다.
+- **삭제 루프 직후 한 번의 최소 yield(`settle()`, `setTimeout(resolve, 0)`)를 넣고 나서 재측정**. 근거: Figma 의
+  auto-layout 재계산이 이론상 동기적이어도, 24개 연속 remove() 직후 곧바로 읽으면 아주 드물게 아직 반영 안 된
+  transient 값을 읽을 가능성을 배제할 수 없다는 게 지금까지 조사에서 남은 유일한 미확인 가설이다(39 의 결과가
+  "지금은 drift 없음"이라 사후 증명은 안 됨). 그래서 **임의로 긴 delay 를 넣지 않고 이벤트 루프를 딱 한 tick
+  흘려보내는 것만** 한다.
+- 그 외(정적 자체 점검, preflight + insideExpectedGroup, fresh backup + path 기반 rollback, flow snapshot)는
+  v2 와 동일. **기존 fresh backup(`1133:644`, `1135:1535`) 은 이 스크립트가 전혀 참조하지 않는다.**
+
+mock 테스트(29개 항목): 3세대 allowlist 로 DRY_RUN 정상 통과 / APPLY 성공 시 backup 두 개(1133:644, 1135:1535)
+전부 이름·존재 그대로(참조 자체를 안 함) / 0.3px 급 영구적 drift 는 여전히 통과 / **2px 급 영구적 drift → 실패
++ rollback, `failureDiagnostics` 가 최종 JSON 에 살아남고 정확한 필드(toolbar.freeW) · before/after/delta(-2) ·
+absDelta(2) · tolerance(0.5) · pass(false) 를 담고 있는지 확인** / **transient 시나리오**: Toolbar padding 을
+삭제 루프 마지막 항목에서 일부러 틀리게 만들고 `setTimeout(0)` 으로 다음 tick 에 원래 값으로 되돌리도록
+예약(실제 v1/v2 가 겪은 것처럼 flow snapshot 에는 안 잡히는 padding 을 건드림) → `settle()` 이 그 tick 을
+흘려보내 correction 이 반영된 뒤에 측정하므로 실패 없이 정상 통과함을 확인(처음엔 flow 자식의 width 를
+건드리는 시나리오로 만들었다가 그건 flow snapshot 자체도 깨뜨려 실제 관찰된 패턴과 안 맞는다는 걸 찾아 padding
+방식으로 고쳤다) / NEVER_TOUCH 5개 보호 유지.
+
+**지금은 v3 DRY_RUN 만 실행한다. 이번 APPLY 가 다시 실패하면, 처음으로 `failureDiagnostics` 에 실제 무엇이
+얼마나 달랐는지가 남는다.**
