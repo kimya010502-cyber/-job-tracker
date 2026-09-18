@@ -1756,3 +1756,22 @@ mock 을 실제 동작(clone 시 중첩 참조 `{}`, 삭제 노드 `.removed` �
 재연결이 무시되는 경우 → `leadingPropertyRefCorrect` 만 실패하고 rollback cleanup 11항목 전부 true /
 재연결 직후 강제 실패 · 라벨 변경 실패 → rollback cleanup 전부 true.
 처음 시험에서 재연결 실패 시 넓힌 세트 크기가 복원되지 않는 문제를 찾아 고쳤다.
+
+### Phase H2-A CLOSED (2026-09-18)
+
+`32b-H2A-v2-sync-chip-variant-create-verify` — `successCriteriaMet` true · `failedCriteria` [].
+`tone=sync` = `1114:684` · 72×24 · bg `surface/subtle` · 라벨 `success/strong` · leading Icon / Dot visible · 참조 `leading#1052:0` · glyph 8×8 `success/strong`.
+기존 variant 5개 · 파일 Chip 인스턴스 65개 불변, stray 없음.
+
+## 33) Phase H2-B — 화면 sync 배지 교체 (DRY_RUN 전)
+
+`33-H2B-v1-sync-chip-screen-replace` / verifier `33b-H2B-v1-sync-chip-screen-replace-verify`.
+- `1002:478` 자리(부모 `1003:1744` 의 자식 index — 숨긴 원본 Bell `1002:487` 때문에 flow index 와 다르다)에 `tone=sync` 인스턴스를 넣고
+  라벨 문구만 "실시간 동기화 완료" 로 override. 색은 전부 마스터 상속 — 되읽기에서 인스턴스 overrides 중 색 관련 필드가 0 인지 확인.
+- 폭 예측 = padding 8+8 + leading 16 + gap 4 + 원본 라벨 폭. 라벨 글꼴 · 크기 · 자간이 원본과 같을 때만 정확(`predictedChipWidthExact`).
+- 31 의 부모 사슬 예측 + 자기 검증(Bell 위치 포함), Header 값 그대로 비교, 다른 sync 복제본은 모양으로 찾아 보호.
+- rollback: id 재조회로 인스턴스 삭제 확인 + 원본 visible 복원 + 부모 크기 · Header · 보호 대상 · Chip 인스턴스 수 확인.
+
+mock: DRY_RUN 137×24 · 부모 165×24 · Bell 0,0 유지 · 간격 4 · 중심 32 · self-check true /
+APPLY 통과(overrides = characters 하나, 색 override 0) / verifier 통과, Header blur 제거 + 복제본 색 변경 시 해당 항목만 실패 /
+원본 숨김 실패 → 인스턴스 삭제 · 원본 visible · 부모 159 복귀.
