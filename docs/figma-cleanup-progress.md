@@ -1579,3 +1579,23 @@ mock 으로 확인: DRY_RUN 통과 · APPLY `successCriteriaMet` true · 3번째
 (snapshot 함수는 29 와 동일). 원래 토글 `1003:1735` 는 메인 화면 해시 + 51×35.5 · 자식 `1003:1736,1003:1739` · 부모 `1003:1734` 를 직접 확인.
 stray = 이름당 1개 + 부모 자식 수가 기준값과 같음 + 세트 밖 `view=*`/`glyph`/segment frame 없음 + source 부모 자식 수 불변.
 mock: 정상 상태 통과, 선택 segment fill 제거 + 기존 아이콘 이동을 일부러 넣으면 해당 두 항목만 실패.
+
+### Phase G1-A CLOSED (2026-09-18)
+
+`29b-G1A-v1-viewtoggle-create-verify` — `successCriteriaMet` true · `failedCriteria` [] · `protectedDiff` [] · `errorCount` 0.
+
+## 30) Phase G1-B — 화면 토글 교체 (DRY_RUN 전)
+
+`30-G1B-v1-viewtoggle-replace` / verifier `30b-G1B-v1-viewtoggle-replace-verify`.
+
+- `1003:1735` 와 같은 부모(`1003:1734 Margin`) · 같은 index 에 `view=card`(`1105:657`) 인스턴스를 넣고 원본은 `visible=false` (삭제는 G5).
+- 예측은 값을 박지 않고 Margin / 필터 그룹 / 툴바의 auto layout · padding · sizing · 정렬에서 계산한다.
+  Margin 이 auto layout 이 아니거나 FIXED 라 넘치면 `marginIsAutoLayout` / `noOverflow` 에서 막힌다.
+- 보호: 메인 화면 전체 snapshot 에서 **당연히 바뀌는 값만** 가린다 — Margin 의 w·h·y 와 자식 목록, 필터 그룹의 x·w.
+  원본 토글 서브트리는 루트 visible·x·y 만 가린다 (숨긴 뒤 layout 에서 빠지면 위치가 바뀔 수 있어서).
+- 실패하거나 되읽기가 하나라도 틀리면 인스턴스 삭제 + 원본 visible 복원 + 크기·보호 대상 재확인.
+
+mock 에서 잡은 버그: 예측 함수가 세로 축에 가로 내용 폭을 넣어 Margin 을 56×52 로 예측했다 →
+`axisSize(node, axis, contentW, contentH)` 로 바꿔 축 혼동을 없앴다.
+mock 결과: DRY_RUN 예측 Margin 56×36 · 그룹 698×36 (x 267→266) · freeSpace 15→14 · 중심 30=30 · 간격 12→12,
+APPLY 전부 통과, 원본 숨김 단계에서 강제 실패 → 인스턴스 삭제 · 보호 대상 불변, verifier 통과 / backup 변경 시 해당 항목만 실패.
