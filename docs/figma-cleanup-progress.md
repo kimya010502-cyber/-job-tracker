@@ -1642,3 +1642,26 @@ G5 cleanup 목록에 추가: `1003:1735` (숨김 원본), wrapper `1003:1734` ·
 - `Icon / Bell` 은 12 에서 13.33×16.67 → 12.8×16 으로 축소됐으므로 문자열 비교 대신
   **명령 순서 + 종횡비 + 축척 보정 후 좌표 최대 오차**로 같은 모양인지 판정한다
 - Header `1002:469` 의 fill 투명도 · DROP_SHADOW · BACKGROUND_BLUR 는 읽기만 한다
+
+### 31a 결과 → H1 범위 확정
+
+Bell `1002:487` 29.33×34.67 · 부모 `1003:1744` "Frame 2" (HORIZONTAL · HUG/HUG · gap 4 · CENTER) · 부속물 0 · fill/effect 없음 · 아이콘 `text/secondary`.
+`Icon / Bell` 과 원본은 명령 순서 동일 · 축척 0.96 · 종횡비 보존 · 보정 후 오차 0 → **같은 모양**. 색도 둘 다 `text/secondary`.
+결정: `1002:487` 만 Icon Button(24×24) + `icon#1055:6` = `Icon / Bell` 로 직접 교체, 새 wrapper 없음.
+부모 164.33×34.67 → 159×24, 형제 `1002:478`(131×24)는 5.33 왼쪽으로 이동만 허용. Header 는 스타일 · 크기 전부 불변.
+다른 Bell 복제본 7개(`1009:232` `1009:252` `1009:274` `1011:1852` `1010:1155` `1019:675` `1044:720`)는 수정 금지 — 다른 화면 Bell 은 별도 phase.
+
+## 31) Phase H1 — Header Bell 교체 (DRY_RUN 전)
+
+`31-H1-v1-header-bell-replace` / verifier `31b-H1-v1-header-bell-replace-verify`.
+
+- 30-v2 의 `childPos` 에 `hugSize` 를 더해, 부모 사슬(`1003:1744` → … → Header)을 **위로 올라가며 크기**, **내려오며 위치**를 계산한다.
+  같은 함수로 지금 구조를 계산해 실제 위치(원본 · 형제 · 각 조상)가 나오는지 먼저 확인한다.
+- Header 는 해시가 아니라 **값 그대로**(size · x · y · positioning · opacity · fills · effects · style) 전후 비교.
+- 메인 화면 snapshot 은 사슬 노드의 w·h·x·y 와 사슬 노드 직속 자식의 x·y 만 가린다. 형제는 x·y 만, 원본은 visible·x·y 만 가린다.
+- 아이콘 swap 은 `setProperties({'icon#1055:6': '1048:814'})` 후 슬롯 main component 를 되읽어 확인, glyph 색이 원본과 같은지도 본다.
+- 되읽기 한 항목이라도 틀리면 rollback (인스턴스 삭제 + 원본 visible 복원 + 크기 · Header · 보호 대상 재확인).
+
+mock (Header SPACE_BETWEEN · 중간 wrapper 하나 가정): DRY_RUN 전부 통과 · self-check true · 부모 159×24 · 형제 x 33.33→28 · 간격 4 ·
+Bell 중심 32→32, APPLY 통과 · verifier 통과, Header blur 제거 + backup 변경 시 해당 4항목만 실패,
+swap 이 안 먹는 상황을 만들면 삽입 전에 멈추고 인스턴스 삭제 · 부모 크기 원래대로.
