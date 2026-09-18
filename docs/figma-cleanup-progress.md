@@ -1541,3 +1541,21 @@ MCP 한도는 2026-09-18 기준 **다시 남아 있음** (§5 의 "20/20 소진"
 두 wrapper 모두 왼쪽 4 — HTML `margin-left` 가 frame 으로 변환된 흔적이다.
 결과적으로 보이는 간격은 Select↔Select **8**, Select→초기화 **12**, 초기화→토글 **12** 로 일관된다.
 `Margin` 만 지우면 초기화→토글만 8 이 되어 리듬이 깨진다.
+
+## 29) Phase G1-A — View icon 2종 + View Toggle Component Set (DRY_RUN 전)
+
+확정: 교체 범위 A안 (`1003:1735` 만 교체, `1003:1734 Margin` 유지 — wrapper 는 G5 에서 `1003:1728` 과 함께).
+아이콘 마스터 기본 색은 둘 다 `text/muted`, 상태 색은 View Toggle variant 안에서만 override.
+
+| 만드는 것 | 사양 |
+|---|---|
+| `Icon / View / Table` · `Icon / View / Card` | 16×16, glyph = `1003:1738` / `1003:1741` clone, 13.5 그대로 · 1.25 중앙, 경로 문자열 일치 검증. 12 의 격자(6열·56) 17·18번 칸 |
+| `View Toggle` (set) | `view = table \| card` 하나뿐. variant 52×36 FIXED · padding 4 · gap 0 · `radius/md` · `surface/subtle` |
+| segment | 22×28 FIXED · 중앙 · `radius/sm`. 선택 = `surface/default` + `elevation/card` + 아이콘 `brand/strong`, 비선택 = 없음 + 아이콘 `text/muted`(명시 override) |
+
+preflight 12개 (이름 충돌 · 변수 6 · effect style · radius 값 8/4 · source 조건 · Icon 17종 · 격자 · 칸 비어 있음 · 세트 위치 · 산술).
+보호: `1002:2` 전체 · source 2 · Icon 17 · `1019:115` · `1044:160` 을 snapshot 해시로 전후 대조.
+실패 시 만든 노드를 역순으로 전부 지우고, 남은 것 0 과 보호 대상 불변을 다시 확인한다.
+성공 시에만 `joob.G1A.baseline` 을 남긴다 (verifier 29b 용).
+
+mock 으로 확인: DRY_RUN 통과 · APPLY `successCriteriaMet` true · 3번째 frame 생성에서 강제 실패 → rollback 6개, leftovers 0, 보호 대상 불변.
