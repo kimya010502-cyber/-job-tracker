@@ -2185,3 +2185,37 @@ absDelta(2) · tolerance(0.5) · pass(false) 를 담고 있는지 확인** / **t
 
 **지금은 v3 DRY_RUN 만 실행한다. 이번 APPLY 가 다시 실패하면, 처음으로 `failureDiagnostics` 에 실제 무엇이
 얼마나 달랐는지가 남는다.**
+
+### 36-v3 APPLY 실패 → failureDiagnostics 로 진짜 원인 확인: 비교 버그였다 (2026-09-18)
+
+`allTargetsDeleted` · `flowSnapshotUnchanged` · `trackedRefsUnchanged` · `protectedNodesUntouched` · `noErrors`
+전부 true, `layoutBefore`/`layoutAfter` 모든 실제 숫자도 동일 — **실제 레이아웃 변화는 전혀 없었다.**
+`layoutUnchanged=false` 의 유일한 원인: `main.freeW` · `toolbar.freeH` · `kpiSection.freeW/freeH` ·
+`grid.freeW/freeH` 6개가 전부 `null → null`(그 컨테이너가 해당 축에서 `FIXED` 가 아니라 freeW/H 자체가
+"해당 없음")인데, `near(null, null)` 이 `typeof` 체크에서 걸려 무조건 false 를 반환해 "달라졌다"로 오판한
+**비교 로직 버그**였다. tolerance 도 settle() 도 원인이 아니었다 — v3 가 만든 `failureDiagnostics` 가 아니었으면
+끝까지 몰랐을 것.
+
+## 36 v4) Phase G5 — null-vs-null 비교 버그 수정 (DRY_RUN 전)
+
+`36-G5-v4-legacy-cleanup-apply` (파일 `.v4.js`, v1·v2·v3 보존). **tolerance·settle 는 손대지 않았다**(원인이
+아니었으므로).
+
+- `evalField()` 로 비교 로직을 하나로 모았다: `before===null && after===null` → `pass=true`(둘 다 "해당 없음"이면
+  같은 것) · 한쪽만 `null` → `pass=false`(진짜 차이) · 둘 다 숫자 → 기존 `near(a,b,0.5)` 그대로 ·
+  `flowChildCount` 는 원래부터 정수 exact compare 그대로.
+- **`c.layoutUnchanged` 판정과 `failureDiagnostics.fieldDiagnostics` 진단표가 이제 같은 함수 호출 결과를
+  공유한다** — 이번 버그가 "판정 로직과 진단 로직이 서로 다르게 구현돼 있다가 어긋난" 종류였기 때문에, 구조
+  자체를 하나로 합쳐 같은 종류의 재발을 막았다.
+- ALLOWLIST 는 36-v3 rollback 이후 실제 id(네 번째 세대, `1137:xxxx`)로 교체, `EXPECTED_GROUP` 도 갱신. 기존
+  backup 3개(`1133:644` · `1135:1535` · `1137:2426`)는 이 스크립트가 전혀 참조하지 않는다.
+
+mock 테스트(29개 항목): mock 자체를 실제 버그 패턴과 똑같이 만들었다 — Main(freeW HUG) · Toolbar(freeH HUG) ·
+KPI section(둘 다 HUG) · Grid(둘 다 HUG) 를 실제로 HUG 축으로 설정해 6개 필드가 진짜로 `null` 이 나오게 하고,
+**이 정확한 시나리오에서 APPLY 가 성공하는지**(v1~v3 라면 반드시 실패했을 상황)를 핵심으로 검증 / null/null 두
+값이 결과에 `before:null, after:null, pass:true` 로 명시적으로 남는지(조용히 건너뛴 게 아니라) / 같은 노드의
+다른 축이 진짜 숫자면(Toolbar.freeW) 2px 급 진짜 변화는 여전히 잡아 rollback / **한쪽만 null 인 병적인 경우**
+(sizing mode 가 중간에 바뀐 것처럼 시뮬레이션)는 여전히 실패로 정확히 잡히는지(과잉 수정 방지) / backup 3개
+전부 참조 안 함 / NEVER_TOUCH 5개 유지.
+
+**지금 실행할 것: 36-G5-v4 DRY_RUN. 통과하면 APPLY 진행 여부를 결과 검토 후 결정한다.**
