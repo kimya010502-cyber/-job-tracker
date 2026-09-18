@@ -1790,3 +1790,36 @@ sync Chip 인스턴스 `1115:688` · `tone=sync` · 137×24 · "실시간 동기
 - 텍스트 스타일 8개의 현재 값과 굵기 매핑(400 Regular · 500 Medium · 600 SemiBold · 700 Bold) 가능 여부.
 - 교체 범위 참고: 파일 / 메인 화면 텍스트 노드 중 로컬 스타일이 **연결되지 않은** 노드 수 — 스타일만 바꿔서는 따라오지 않는 노드다.
 - 끝에서 텍스트 스타일 8개를 처음 값과 다시 비교해 비파괴를 확인한다.
+
+결과: `pretendardFamilyFound` true · `chosenFamily` Pretendard · 4 굵기 전부 load true · `allRolesMappable` 8/8 ·
+`currentStylesMatchSpec` 8/8 · 메인 화면 텍스트 209개 전부 Local Text Style 연결(`mainFrameWithoutStyle` 0) ·
+파일 전체 1306개 중 576개 스타일 연결(730개는 미연결 — 이번 범위 밖).
+
+## 34) Phase I — Local Text Style 8개 fontName 교체 (DRY_RUN 전)
+
+`34-v1-font-pretendard-style-swap` / verifier `34b-v1-font-pretendard-style-swap-verify`.
+
+- 역할 이름으로 스타일 8개를 찾아 **fontName 만** Gothic A1 → Pretendard 로 바꾼다. size · lineHeight · letterSpacing ·
+  style name/id 는 34p 와 동일한 방식으로 다시 비교해 불변을 확인한다. 개별 TEXT node · 컴포넌트 · 인스턴스 · backup 은
+  직접 만지지 않는다 — 스타일 객체 8개만 `set` 한다.
+- 스타일은 파일 전체 공유 객체이므로 메인 화면 209개 외에 다른 화면 · backup 의 텍스트도 자동 상속된다. 이 사실을 숨기지 않고
+  DRY_RUN 결과의 `scopeImpact`(파일 전체 대비 메인 화면 밖 영향 개수, backup 2개 프레임 개별 집계)로 그대로 보고한다.
+- 레이아웃 기준값: 메인 화면 안에서 이 8개 스타일을 쓰는 텍스트를 포함한 모든 auto-layout 컨테이너를(부모 체인을 타고 올라가며)
+  찾아 FIXED 축의 free space(= 크기 − padding − 자식 필요 크기, gap 포함)를 잰다. 특정 노드 ID 를 하드코딩하지 않는 일반화된
+  방식이라 Toolbar/Select/Button/Chip/Header sync Chip/KPI/카드/NavItem 어디든 해당되면 자동으로 잡힌다.
+  20px 미만인 컨테이너는 `tightContainers` 로 따로 표시(기존에 알려진 Toolbar free space 약 14px 케이스가 여기 해당).
+- APPLY(아직 실행 안 함): 8개 style.fontName 을 순서대로 바꾸고 되읽기 — 값 8개 모두 Pretendard 로 바뀌었는지,
+  나머지 필드 불변인지, 메인 화면 209개 중 override 없는 노드가 전부 상속됐는지, 레이아웃 기준값 재측정에서
+  overflow(free space 가 양수 → 음수로 넘어간 컨테이너)가 새로 생겼는지 확인. 실패 시 8개 스타일을 Gothic A1 로 되돌리고
+  재확인. Gothic A1 재로드 가능 여부를 **mutation 전에** preflight 에서 먼저 확인해, rollback 안전성이 보장 안 되면
+  아예 아무것도 바꾸지 않고 멈춘다.
+
+mock 테스트(53개 항목, Figma Plugin API 를 흉내 낸 Node 하네스로 검증 — 실제 Figma 실행 전 로직 확인용):
+DRY_RUN 209개 정상 통과(Toolbar free space 14 감지) / 텍스트 개수가 209 아닐 때·미연결 텍스트가 있을 때·이미 Pretendard 일 때·
+Pretendard 로드 실패일 때 각각 해당 blocker 만 걸림 / 기존 override 있는 노드는 막지 않고 정보로만 보고 /
+APPLY 정상 통과(8개 전부 Pretendard, mutationCount 8, overflow 없음, pluginData 기준값 저장) /
+APPLY 도중 강제 실패 → 3개 스타일까지 바뀐 상태에서 rollback, 8개 전부 Gothic A1 로 복원 확인 /
+rollback 안전성(Gothic A1 재로드) 자체가 실패하면 mutation 0 으로 아예 멈춤 / verifier 는 기준값 있을 때 통과,
+없을 때(34 를 안 돌렸을 때) 명확히 실패.
+
+**지금은 DRY_RUN 만 실행한다. APPLY·verifier 링크는 DRY_RUN 결과를 ChatGPT 검토 후 별도로 받는다.**
