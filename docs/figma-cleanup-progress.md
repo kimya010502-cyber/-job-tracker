@@ -1901,3 +1901,50 @@ backup 샘플이 실제 Pretendard 문자열로 나오는지 확인 / **진짜 �
 남아 `successCriteriaMet` 를 false 로 만들되, typography 측정 자체는 정상적으로 계속 됨을 확인.
 
 **지금 실행할 것: 34b-v3 verifier (read-only, 바로 Run).**
+
+### 34b-v3 verifier 결과 → Phase I CLOSED (2026-09-18)
+
+`successCriteriaMet` true · `failedCriteria` [] · `phaseVerdict` "Phase I (Pretendard) CLOSED 가능".
+8개 스타일 전부 Pretendard(`allEightArePretendard`) · 굵기 매핑(`weightsMatchRoles`) · size/line 불변(`sizeLineUnchanged`) ·
+메인 화면 209/209 상속(`mainFrameInheritsPretendard`) · overflow 없음(`noOverflowNow`, `overflowNow` []) ·
+scroll regression 없음(`scrollRegressionsNow` []) · backup `1044:47` 177/177 Pretendard 상속 확인. `baselineFrom` 은
+null 이었지만 `warnings` 로만 남고 `errorCount` 0 — 실제 typography 판정에는 영향 없음(34b-v3 의 baseline 독립 설계대로).
+
+## Phase I (Pretendard 폰트 전환) CLOSED (2026-09-18)
+
+Local Text Style 8개 Gothic A1 → Pretendard 완료. Toolbar `1003:1695` freeW 14→53(여유 증가) · Search Input
+`1070:71` freeW 2→2(불변) · Main `1002:3` scroll freeH −67→−67(불변) — 새 overflow · scroll regression 전혀 없음.
+메인 화면을 최종 source of truth 로 완성하는 작업의 마지막 디자인 시스템 단계. 다음은 G5(hidden/legacy cleanup) →
+final global verify → source of truth 확정 순서로 진행한다.
+
+## 35) Phase G5 사전 감사 — hidden/legacy 노드 인벤토리 (read-only)
+
+`35-G5-v1-legacy-cleanup-audit`.
+
+- 범위는 메인 화면 `1002:2` 서브트리만. backup(`1044:47`/`1019:2`)은 이 서브트리 밖이라 애초에 스캔 대상이 아니고
+  결과에도 안 나온다 — cleanup 대상에서 완전히 제외.
+- 알려진 후보 5개(`1003:1735` legacy View Toggle hidden · `1003:1734` View Toggle wrapper · `1003:1728` reset
+  wrapper · `1002:487` legacy Bell hidden · `1002:478` legacy sync hidden)를 지금 상태로 다시 확인하되, **이 목록만
+  믿지 않는다**: 서브트리 전체에서 `visible === false` 인 모든 노드(부모가 hidden 이면 자식은 더 안 내려간다 — 같이
+  지워지므로 별도 후보 아님)와, 이름에 legacy/구버전/old/deprecated/temp/copy/backup 류 패턴이 있는 **visible 노드**도
+  함께 찾는다.
+- 분류: `SAFE_TO_DELETE` 는 **hidden 노드에만** 준다(visible 노드는 아무리 이름이 수상해도 최대 `REVIEW_REQUIRED`).
+  그 중에서도 COMPONENT/COMPONENT_SET 자신이거나 내부에 컴포넌트 정의를 포함하고 그 컴포넌트가 파일 어딘가에서
+  실제 인스턴스로 쓰이고 있으면 `REVIEW_REQUIRED` 로 보호한다. hidden 노드는 Figma auto-layout 이 flow 계산에서
+  이미 제외하므로(HUG 부모 크기 불변) 레이아웃 영향이 없다는 근거를 이유에 남긴다. 같은 부모의 비슷한 크기 visible
+  INSTANCE 형제가 있으면 "교체 인스턴스로 보인다"고 같이 낸다(높이는 좁게, 폭은 규칙 차이를 감안해 넉넉하게 비교 —
+  실제 sync 배지 131×24 → Chip 137×24 같은 6px 차이도 잡아야 해서).
+  visible wrapper(자식 ≤1, padding/gap/시각 요소 전부 없음) → `REVIEW_REQUIRED`(평탄화 후보, 삭제 후보 아님).
+  자식 2개 이상이거나 padding/gap 이 남아있는 visible 노드 → `KEEP`.
+- 알려진 후보가 지금 문서에 아예 없으면 note 로만 남기고(크래시 안 남) 목록에서 빠진다. 존재하지만 상태가
+  바뀌었으면(예: 이제 visible) — 숨기지 않고 **지금의 실제 상태 그대로** 후보 목록에 넣어서 정확하게 재분류한다.
+
+mock 테스트(38개 항목): 알려진 hidden 후보 3개 SAFE_TO_DELETE + 교체 인스턴스 감지 확인(sync 배지 6px 폭 차이 포함,
+처음엔 임계값이 너무 좁아서 놓치는 버그를 찾아 폭 허용치를 넓힘) / visible wrapper 중 padding 있는 건 KEEP, 순수
+passthrough 는 REVIEW / 목록에 없던 새 hidden 노드도 스캔으로 발견 / hidden 인데 내부에 실사용 컴포넌트가 있으면
+보호(REVIEW, 삭제 후보 제외) / 이름만 수상한 visible passthrough 는 REVIEW(SAFE 아님) / 이름은 수상해도 실제
+spacing 역할 있는 visible 노드는 KEEP / backup 은 후보에 전혀 안 나옴 / 알려진 후보가 문서에 없을 때 note 로만
+보고 / 알려진 후보가 있지만 상태가 바뀌었을 때 stale 데이터 아니라 지금 상태 그대로 정확히 보여줌 / summary
+집계(cleanup/review/keep/protected count) 정합성 확인.
+
+**지금 실행할 것: 35-G5 audit (read-only, 바로 Run). 삭제 APPLY 는 이 결과를 검토한 뒤 별도로 준비한다.**
