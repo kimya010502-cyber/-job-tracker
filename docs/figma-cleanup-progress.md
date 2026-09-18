@@ -1988,3 +1988,42 @@ id 패턴만으로 인스턴스 내부로 판정 / **회귀 확인**: v1 에서 
 기록으로 SAFE 판정 / summary 5버킷 정합성 · backup 범위 제외 재확인.
 
 **지금 실행할 것: 35-G5-v2 audit (read-only, 바로 Run). 삭제 APPLY 는 이 결과를 검토한 뒤 별도로 준비한다.**
+
+### 35-G5-v2 실행 결과 → ChatGPT 검토, APPLY 승인 (2026-09-18)
+
+`safeLegacyRoots` 24 · `protectedInstanceInternals` 43 · `keepWrappers` 2 · `reviewRequired` 3 ·
+`totalHiddenButIntentional` 43 · `errorCount` 0. v2 분류가 의도대로 동작함을 확인. **exact allowlist 24개**
+(KPI 4 · Toolbar 11 · View Toggle 1 · Header 2 · Nav 6) 로 삭제 대상을 고정 — 동적 hidden scan 결과를 추가
+삭제 대상으로 쓰지 않는다. 절대 삭제 금지: REVIEW_REQUIRED 3개(`1009:703`/`1009:709`/`1002:506`) ·
+KEEP wrapper 2개(`1003:1734`/`1003:1728`) · 인스턴스 내부 전부 · Component/Component Set · backup 2개.
+
+## 36) Phase G5 — exact allowlist 24개 삭제 스크립트 (DRY_RUN 전)
+
+`36-G5-v1-legacy-cleanup-apply` / verifier `36b-G5-v1-legacy-cleanup-apply-verify`.
+
+- **ALLOWLIST 상수가 유일한 삭제 대상 소스.** 동적 스캔 결과를 절대 안 쓴다. 정적 자체 점검으로 ALLOWLIST 가
+  NEVER_TOUCH(REVIEW_REQUIRED 3 + KEEP wrapper 2)와 겹치지 않는지, 중복 id 가 없는지 먼저 확인한다.
+- preflight — 24개 각각: exists · visible=false · mainFrame 서브트리 안 · insideInstance=false(35-G5-v2 와
+  같은 판정: parent chain 에 INSTANCE 있음 또는 id 에 `;` 포함) · COMPONENT/COMPONENT_SET 아님 · 부모가 여전히
+  mainFrame 안. 하나라도 어긋나면 24개 전부 막는다(부분 삭제 없음).
+- **flow 스냅샷으로 "삭제 전후 visible layout 불변"을 증명**: 24개는 전부 hidden 이라 Figma auto-layout 의
+  flow 계산에 애초에 안 잡힌다 — 그래서 flow 만(=visible && non-absolute 자식만) 훑은 스냅샷은 24개를 지워도
+  이론상 완전히 같은 해시가 나와야 한다. 조금이라도 다르면 다른 무언가가 바뀐 것이므로 즉시 실패 처리.
+  Main·Toolbar·Search Input·Header·Aside·KPI section·Grid 의 free space 와 View Toggle·Bell·Sync Chip 도
+  이름으로 따로 재측정.
+- **rollback**: remove() 는 되돌릴 수 없어서, 삭제 전 mainFrame 전체를 clone 해 같은 페이지 안 메인 프레임
+  밖(오른쪽 멀리)에 "fresh backup"을 만든다(DRY_RUN 에서는 생성 안 함). 24개 각각의 "mainFrame 루트부터의
+  자식 index 경로"를 삭제 전에 기록해두고, 검증 실패 시 backup 안에서 같은 경로를 찾아 clone 후 원래 부모의
+  같은 index 에 다시 끼워 넣는다(새 id 로 재생성 — 완전한 원상복구는 아니지만 구조·시각은 복원). fresh backup 은
+  성공·실패 관계없이 지우지 않고 남긴다. 기존 backup(`1044:47`/`1019:2`)은 건드리지 않는다.
+
+mock 테스트(58개 항목, clone()/remove()/insertChild() 를 지원하는 목업으로 실제 삭제·복원까지 재현):
+DRY_RUN 24개 정상 통과 / 대상 하나가 문서에서 사라졌을 때·인스턴스 내부로 옮겨졌을 때 각각 막힘 /
+APPLY 24개 전부 삭제 + flow 해시·레이아웃·refs·보호 대상 전부 불변 확인 + mutationCount 정확히 1(backup)+24(삭제) /
+**진짜 rollback 시나리오**: 삭제 도중 무관한 노드 하나가 우연히 숨겨지는 부작용을 주입 → flow 해시 불일치로
+감지 → 24개 전부 backup 경로 조회로 복원, `rollbackClean` true, backup 은 안 지워짐 확인(이 테스트에서 처음엔
+부작용을 preflight 단계에서 주입해 "삭제 전" 기준값 자체가 이미 오염되는 바람에 실패를 못 잡는 버그를 찾아,
+정확히 삭제 루프 시점에 주입하도록 고쳤다) / verifier 는 APPLY 직후 통과, APPLY 없이 차갑게 돌리면
+`allTargetsDeleted` false 로 정확히 실패.
+
+**지금은 DRY_RUN 만 실행한다. APPLY·verifier 링크는 DRY_RUN 결과를 ChatGPT 검토 후 별도로 받는다.**
