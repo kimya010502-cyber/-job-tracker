@@ -2068,3 +2068,34 @@ mock 테스트(34개 항목, restoredRows 24개를 원본 그대로 재현): 전
 가설(빡빡한 임계값이 오탐 원인)을 뒷받침.
 
 **지금 실행할 것: 37-G5 recovery audit (read-only, 바로 Run). 36-v2 APPLY 는 이 결과를 보고 별도로 준비한다.**
+
+### 37-G5-v1 실행 결과 → rollback 상태 정상 확인 (2026-09-18)
+
+`currentStateHealthy` true. 복원된 24개 전부 정상(존재·hidden·mainFrame 안·원래 그룹 안), 원본 id 전부 소멸,
+fresh backup(`1133:644`) mainFrame 밖에 정상 보존, `layoutCompare` 전부 match(Main 1024×1024/freeH −67 ·
+Toolbar 976×60/freeW 53 · Search Input 240×36/freeW 2 · Header 1024×64 · Aside 256×1024 · KPI
+flowChildCount 4 · Grid flowChildCount 12), refs·보호 대상 전부 정상. **36-v2 준비 승인.**
+
+## 36 v2) Phase G5 — restoredAsId 기준 allowlist + 0.5px 허용치 (DRY_RUN 전)
+
+`36-G5-v2-legacy-cleanup-apply` (파일 `.v2.js`, v1 보존). 기존 fresh backup(`1133:644`)은 이 스크립트가
+전혀 참조하지 않는다 — 건드리지 않는다.
+
+- **ALLOWLIST 를 37 로 확인된 restoredAsId 24개로 교체**(원본 id 는 이제 전부 사라졌으므로 그대로 두면 전부
+  "찾지 못함"으로 막힘).
+- **레이아웃/refs 비교 허용치를 전부 0.5px 로 통일**(v1 의 0.02 폐기, 프로젝트 표준과 일치).
+- **크기 비교를 문자열이 아니라 숫자로**: `size` 문자열 그대로 비교하던 걸 w/h `near()` 비교로, refs 비교도
+  `JSON.stringify` strict 비교에서 필드별 `near()` 비교로 바꿨다 — 둘 다 같은 부동소수점 함정에 걸릴 수 있었다.
+- **추가 안전장치**: preflight 에 `insideExpectedGroup`(37 과 같은 그룹 매핑 — KPI section/Toolbar/Header/Aside
+  서브트리 안인지)을 새로 넣어, 혹시 복원 위치가 예상과 다르면 삭제 전에 막는다.
+- 그 외(ALLOWLIST·NEVER_TOUCH 겹침 자체 점검, preflight 구조, fresh backup + path 기반 rollback, flow snapshot)는
+  v1 과 동일.
+
+mock 테스트(29개 항목): restoredAsId 24개로 DRY_RUN 정상 통과 / 그룹 밖으로 옮겨진 경우·소실된 경우 각각 막힘 /
+APPLY 24개 삭제 성공 시 기존 backup(`1133:644`) 이름·존재 그대로(참조조차 안 함) 확인 / **v1 버그 재현 테스트**:
+flow 스냅샷에 안 잡히는 대상(Toolbar padding 을 삭제 도중 0.3px 만 틀어지게 주입 — 실제 v1 이 겪은 것과 같은
+패턴, `flowSnapshotUnchanged` 는 그대로 true 인데 `layoutUnchanged` 만 걸리는 상황을 재현)이 **0.5px 허용치에서는
+정상 통과**함을 확인해 이번 수정이 실제로 그 실패를 해결하는지 검증 / 2px 급 진짜 변화는 여전히 잡아 rollback
+확인 / NEVER_TOUCH 5개 보호 유지 확인.
+
+**지금은 v2 DRY_RUN 만 실행한다. APPLY 는 이 결과를 검토한 뒤 진행한다.**
