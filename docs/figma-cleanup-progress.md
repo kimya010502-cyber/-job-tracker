@@ -1823,3 +1823,40 @@ rollback 안전성(Gothic A1 재로드) 자체가 실패하면 mutation 0 으로
 없을 때(34 를 안 돌렸을 때) 명확히 실패.
 
 **지금은 DRY_RUN 만 실행한다. APPLY·verifier 링크는 DRY_RUN 결과를 ChatGPT 검토 후 별도로 받는다.**
+
+### 34 v1 DRY_RUN 실행 결과 → ChatGPT 검토 (2026-09-18)
+
+`preflightPassed` false. 유일한 blocker `noExistingNegativeFreeSpace` — Main(`1002:3`, FIXED 1024×1024,
+clipsContent=true, overflowDirection=VERTICAL)의 **의도된 vertical scroll**(freeH −67, F2-B/F3 에서 만든 구조)을
+overflow 오류로 오판. v1 의 절대값 기준(모든 음수 free space 금지) 판정이 scroll 컨테이너를 구분하지 못한 게 원인.
+`scopeImpact`(mainFrameEligible 209 · fileWideEligible 576 · otherScreensAffected 367 · backup 1044:47 영향 177)는
+공유 스타일의 정상 동작으로 확인, blocker 아님. 실제 위험 지점은 Toolbar(`1003:1695`, freeW 14)와
+Search Input(`1070:71`, freeW 2) — 둘 다 non-scroll 고정폭이라 Pretendard 교체 후 진짜 overflow 위험.
+
+## 34 v2) Phase I v2 — scroll 컨테이너 구분 + regression 비교 (DRY_RUN 전)
+
+`34-v2-font-pretendard-style-swap` / verifier `34b-v2-font-pretendard-style-swap-verify` (파일 `.v2.js`, v1 보존).
+
+- **scroll 컨테이너 구조적 분류** (ID 하드코딩 없음): `clipsContent === true` + `overflowDirection` 이 해당 축과 일치
+  (`HORIZONTAL`/`BOTH` → freeW, `VERTICAL`/`BOTH` → freeH) + 그 축 sizing 이 `FIXED`. 이 조합이면 기존 음수 free space 를
+  DRY_RUN blocker(`noUnexpectedExistingOverflow`)에서 제외한다. scroll 이 아닌 컨테이너는 그대로 막는다(진단용 — 교체와
+  무관한 기존 문제를 먼저 드러낸다).
+- **APPLY 판정을 절대값 → regression 비교로 변경**: scroll 컨테이너는 `after < before − 0.5` 일 때만 `scrollRegressions` 로
+  정보성 보고(성공 여부에 영향 없음, rollback 유발 안 함). scroll 이 아닌 컨테이너는 여전히 `after < −0.5` 면 진짜 overflow →
+  `newOverflow` 실패 → rollback. HUG 컨테이너 크기 변화 자체는 실패 기준이 아니고 free space(overflow 여지)만 본다.
+- DRY_RUN 출력에 `scrollContainers`(id·name·axis·현재 free space) 를 새로 추가해 어떤 컨테이너가 의도된 scroll 로
+  분류됐는지 검토할 수 있게 했다.
+- `34b` 도 같은 문제(overflow 절대값 판정)가 있어 함께 v2 로 갱신: scroll 분류를 verifier 에도 반영하고, pluginData
+  기준값 키를 `joob.34.baseline.v2` 우선 → 없으면 v1 키(`joob.34.baseline`)로 대체 조회하도록 해서 v1/v2 어느 쪽으로
+  APPLY 했어도 검증 가능하게 했다.
+
+mock 테스트(61개 항목, Main 을 FIXED+clipsContent+overflowDirection=VERTICAL 스크롤 컨테이너로 재현하고 Toolbar
+freeW 14 · Search Input freeW 2 를 실제 ID(`1003:1695`/`1070:71`)로 재현):
+DRY_RUN — Main 의 큰 음수 freeH 가 더 이상 안 막음(scroll 로 분류) / Toolbar 를 인위로 이미 음수로 만들면(scroll 아님)
+여전히 막힘(교체와 무관한 기존 문제는 계속 잡아낸다) / 기존 6개 케이스(개수·미연결·override·이미 Pretendard·로드 실패) 그대로 통과 /
+APPLY Case A(scroll 불변 → PASS) · Case B(scroll 이 −20 더 나빠짐 → `scrollRegressions` 로만 flag, `successCriteriaMet` 그대로 true) ·
+Case D(Toolbar 가 음수로 넘어감 → 실패 + rollback, Gothic A1 복원) · Case E(Search Input 가 음수로 넘어감 → 실패 + rollback) /
+무관한 실패로도 깨끗이 rollback / rollback 안전성 자체가 실패하면 mutation 0 / verifier v2 는 v2 기준값을 찾고 Main scroll 을
+오판하지 않음 + v1 기준값만 있을 때 v1 키로 대체 조회.
+
+**지금은 v2 DRY_RUN 만 실행한다. APPLY·verifier 링크는 DRY_RUN 결과를 ChatGPT 검토 후 별도로 받는다.**
