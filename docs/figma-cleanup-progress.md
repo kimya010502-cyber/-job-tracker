@@ -2027,3 +2027,44 @@ APPLY 24개 전부 삭제 + flow 해시·레이아웃·refs·보호 대상 전�
 `allTargetsDeleted` false 로 정확히 실패.
 
 **지금은 DRY_RUN 만 실행한다. APPLY·verifier 링크는 DRY_RUN 결과를 ChatGPT 검토 후 별도로 받는다.**
+
+### 36-v1 DRY_RUN 통과 → APPLY 실행 → 실패 → rollback 성공 (2026-09-18)
+
+DRY_RUN: `preflightPassed` true, 24/24 found, `insideInstanceBlocked` 0, `protectedNodesConfirmed` 5,
+flow snapshot nodeCount 517 / hash `df9da4ef`. **APPLY 승인** → 같은 파일 `DRY_RUN=false` 만 바꿔 실행.
+
+APPLY 결과: `aborted` true, `failure` = "되읽기 검증 실패: layoutUnchanged" (다른 check 는 전부 통과 —
+`flowSnapshotUnchanged` 포함). `rolledBack` true, `rollbackClean` true — 24개 전부 fresh backup(`1133:644`)
+경로 조회로 복원됐지만, **remove() 는 되돌릴 수 없어 복원된 24개는 전부 새 id 를 받았다**(예: `1002:24` →
+`1133:1408`). **36-v1 은 재실행하지 않는다.**
+
+원인 분석(1번 요청 — 실제 실행 전 `flowSnapshotUnchanged` 는 통과했으므로 hidden 노드가 hash 에 잡혀 오판한
+게 아니다): `failedCriteria` 가 `layoutUnchanged` **하나만** 포함했다 — flow 스냅샷(hidden 노드는 애초에
+제외)은 문제가 아니었고, 별도의 숫자 비교(`layoutOf()` 의 freeW/freeH, `near()` 임계값)가 원인이다. 36-v1 은
+이 비교에 `near(..., 0.02)`라는 지나치게 빡빡한 허용치를 썼다 — 프로젝트 전반의 다른 스크립트는 전부 기본
+0.5 를 쓰는데 이 check 만 0.02 로 좁혀놨었다. hidden 노드는 flow/HUG 계산에서 이미 제외되므로 삭제로 실제
+freeW/freeH 가 바뀔 이유가 없고, 실제 Figma 가 문서 mutation 뒤 내부적으로 좌표를 아주 미세하게(0.02px 미만은
+아니고 그보다 약간 더) 재계산해 순수 float 오차가 발생했을 가능성이 가장 유력 — "진짜 레이아웃 변화"가 아니라
+"체크 임계값이 너무 빡빡했던" 문제로 잠정 결론.
+
+## 37) Phase G5 — rollback 후 복구 상태 확인 (read-only)
+
+`37-G5-v1-recovery-audit`.
+
+- 사용자가 알려준 원본→복원 24개 id 매핑을 그대로 하드코딩해 각각 존재 · visible=false · mainFrame 서브트리 안 ·
+  인스턴스 내부 아님 · **원래 속했던 그룹 컨테이너(KPI section/Toolbar/Header/Aside) 서브트리 안**(정확한 직속
+  부모까지는 모르므로 그룹 단위로만 확인, 과도하게 단정하지 않음)인지 재확인.
+- 원본 24개 id 가 전부 사라졌는지(중복 존재 방지), fresh backup(`1133:644`)이 mainFrame 밖에 그대로 있는지
+  (손대지 않음), View Toggle/Bell/Sync Chip 과 REVIEW_REQUIRED 3개·KEEP wrapper 2개도 재확인.
+- Main·Toolbar·Search Input·Header·Aside·KPI section·Grid 를 36-v1 DRY_RUN 실측값과 **0.5px 허용치**로 재대조
+  (36 의 0.02 는 이 조사 자체가 반증하는 값이라 여기서는 프로젝트 표준인 0.5 사용). 이 스크립트를 만들다가
+  **크기 비교도 같은 함정에 걸릴 뻔한 걸 자체 테스트로 발견**: 처음엔 `size` 를 "1024×1024" 같은 문자열로 비교했는데,
+  이러면 폭이 0.3px 만 떠도 문자열이 달라져 오탐이 난다 — w/h 를 숫자로 따로 내서 전부 `near()` 로 통일했다.
+
+mock 테스트(34개 항목, restoredRows 24개를 원본 그대로 재현): 전부 정상 복원됐을 때 `currentStateHealthy` true /
+복원된 노드가 실수로 visible=true 인 경우·예상 그룹 밖으로 나간 경우·아예 없어진 경우 각각 잡아냄 / 원본 id 가
+아직 남아있는(중복) 경우 잡아냄 / fresh backup 이 없거나 mainFrame 안으로 잘못 들어간 경우 잡아냄 / **0.3px
+같은 미세한 차이는 0.5px 허용치 안에서 정상 통과**, **몇 px 급 실제 변화는 여전히 잡아냄** — 이번 조사의 핵심
+가설(빡빡한 임계값이 오탐 원인)을 뒷받침.
+
+**지금 실행할 것: 37-G5 recovery audit (read-only, 바로 Run). 36-v2 APPLY 는 이 결과를 보고 별도로 준비한다.**
