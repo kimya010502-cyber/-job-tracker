@@ -2362,3 +2362,26 @@ Guide Card 폭이 304 로 맞는지 · summary bar 구분선 3개 · 42 의 산�
 예외 발생 시 이번에 만든 것만 rollback 되는지까지 전부 확인. 전부 통과, 버그 없음.
 
 **지금 실행할 것: 43-v1-detail-screen-build-v2 DRY_RUN.**
+
+### 43 APPLY 결과 (2026-09-21)
+
+43-v1 APPLY 성공(`detailScreen = 1145:4666`), 이전 버전보다 개선. 다만 Summary bar 높이 · current 카드 내부 위계 ·
+connector 강도 · waiting-locked 카드 존재감 · 2단 비율(우측 메모 패널 좁음) · 메모 패널 태그 잘림/본문 줄바꿈 ·
+Guide Card 높이 · 상단 액션 spacing 이 아직 부족하다는 피드백. 새 프레임 없이 `1145:4666` 을 직접 다듬기로 결정.
+
+## 44) 상세 화면 시각적 다듬기 — 1145:4666 직접 수정 (DRY_RUN 전)
+
+`44-v1-detail-screen-polish`. 새 프레임/컴포넌트/아이콘 생성 없음, audit/backup/verifier 없이 스크립트 1개.
+`detailScreen` 아래를 이름으로 따라가서(43 이 붙인 이름 그대로) 수정하고, Timeline Step Card 두 variant 와 Guide Card
+는 인스턴스가 아니라 `getMainComponentAsync()` 로 메인 컴포넌트를 직접 고쳐서 인스턴스에 일괄 반영.
+
+변경: Summary bar padY 10→7·gap 14→11 · current 카드 padding 20/gap 16 + 입력 행과 메모 사이 얇은 구분선 + memo-box
+stroke · connector 2→3px, 색 진하게 · waiting-locked 56→68px, padding/gap 증가 · 2단 636/20/320(=976) · 메모 태그
+`layoutWrap` + 본문 4줄 `textAutoResize=HEIGHT`(줄바꿈이 안 되던 원인) + `memo-body` 그룹(gap 8) · Guide Card
+padding 18/gap 8 + 본문 wrap · 상단 액션 gap 12 + 상태칩/버튼 사이 구분선 · Main spacing 14→16.
+
+mock 34개(43 APPLY 로 만든 트리에 44 를 적용). 첫 실행에서 **실제 버그 1건 발견·수정**: current 카드 content 는
+x=4 에 놓이는데 폭을 accent 폭(6)으로 빼서 우측 2px 가 남던 문제 → `curContent.x` 기준으로 계산. 중간 실패 시엔
+rollback 없이(삭제·생성 없음) 어디까지 적용됐는지만 보고한다.
+
+**지금 실행할 것: 44-v1-detail-screen-polish DRY_RUN.**
